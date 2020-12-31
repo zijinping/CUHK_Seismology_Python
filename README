@@ -1,8 +1,0 @@
-#Environment requirement
-obspy
-numpy
-pandas
-matploblib
-
-#run setup.py to add the path to your python environment
-
