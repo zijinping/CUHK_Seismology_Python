@@ -1,0 +1,1047 @@
+#!/usr/bin/perl
+#
+# FetchMetadata
+#
+# Find the most current version at http://service.iris.edu/clients/
+#
+# Fetch metadata from a web service.  The default web service is from
+# the IRIS DMC, other FDSN web services may be specified by setting
+# the following environment variables:
+#
+# SERVICEBASE = the base URI of the service(s) to use (http://service.iris.edu/)
+# METADATAWS = complete URI of service (http://service.iris.edu/fdsnws/station/1)
+#
+# Dependencies: This script should run without problems on Perl
+# release 5.10 or newer, older versions of Perl might require the
+# installation of the following modules (and their dependencies):
+#   XML::SAX
+#   Bundle::LWP (libwww-perl)
+#
+# Installation of the XML::SAX::ExpatXS module can significantly
+# speed up the parsing of metadata results returned as XML.
+#
+## Metadata selection
+#
+# Metadata is generally selected by specifying network, station,
+# location, channel, start time and end time.  The name parameters may
+# contain wildcard characters.  All input options are optional.
+# Selections may be specified one of three ways:
+#
+# 1) Command line arguments: -N, -S, -L, -C, -Q, -s, -e
+#
+# 2) A BREQ_FAST formatted file, http://www.iris.edu/manuals/breq_fast.htm
+#
+# 3) A selection file containing a list of:
+#    Net Sta Loc Chan Start End
+#
+# Example selection file contents:
+# II BFO 00 BHZ 2011-01-01T00:00:00 2011-01-01T01:00:00
+# IU ANMO 00 BHZ 2011-01-01T00:00:00 2011-01-01T01:00:00
+# IU COLA 00 BHZ 2011-01-01T00:00:00 2011-01-01T01:00:00
+#
+# For the command line arguments and the selection file the network,
+# station location and channel fields may contain the common * and ?
+# wildcards, meaning zero-to-many and a single character respectively.
+# These fields may also be comma-separated lists, for example, the
+# network may be specified as II,IU,TA to select three networks.
+#
+## Data output
+#
+# A line will be written to the file for each channel epoch and will
+# contain:
+# "net|sta|loc|chan|lat|lon|elev|depth|azimuth|dip|instrument|scale|scalefreq|scaleunits|samplerate|start|end"
+#
+# This metadata file can be used directly with mseed2sac or tracedsp
+# to create SAC files including basic metadata.
+#
+#
+# ## Change history ##
+#
+# 2010.217:
+#  - Initial version, split from FetchBulkData 2010.217
+#
+# 2010.273
+# - Add -A option to specify an application name/version, this will be
+# added to the UserAgent string.
+#
+# 2010.342
+#  - Convert metadata fetching to use the production ws-station service
+#  instead of the deprecated service previously used.
+#  - Rearrange and add fields to the metadata file output lines.
+#
+# 2011.020
+#  - Rework metadata parser for changed content (InstrumentSensitivity).
+#  - Add diagnostics and more graceful failure to metadata retrieval.
+#
+# 2011.046
+#  - Add -ua option to limit results to data updated after a date.
+#  - Save received XML metadata to a temporary file, the PurePerl SAX
+#  XML parser is much faster when working on files.
+#  - Allow comma-separated lists for selection by changing the delimiter
+#  for selection entries.
+#
+# 2011.089
+#  - Fix error message to report unrecognized channels in BREQ_FAST files.
+#
+# 2011.164
+#  - Add Perl and LWP version to UserAgent and wsclient URL to usage message.
+#  - Print script name and local time when verbose.
+#  - Add example of selection file and more comments on lists and wildcarding.
+#  - Add -msurl option to override metadata service query URL.
+#  - Add -sta option to request and parse station level information only
+#
+# 2011.172
+#  - Remove newline and carriage return characters and trailing spaces from
+#  site and instrument strings.
+#
+# 2011.337
+#  - Print error message text from service on errors.
+#  - Add undocumented -nobs option to prevent printing backspace characters in status.
+#  - Remove "query" portion from base URLs, moving them to the service calls.
+#  - Include local time in output of DONE line.
+#
+# 2012.045
+#  - Print "No data available" when return code is 204 in addition to 404.
+#  - Allow start/end times specified with microsecond resolution, subseconds are currently ignored.
+#  - Allow -- location IDs in BREQ_FAST formatted selections.
+#
+# 2012.061
+#  - Add -resp option to request response level information, no extra parsing
+#  or printing of response level details is included, useful for saving the XML.
+#  - Add index numbers to XML output file if more than one request is submitted
+#  to the server.  Using a selection list or BREQ_FAST file for input can generate
+#  multiple requests, one request per line in fact.
+#
+# 2012.068:
+#  - Use new starttime and endtime parameters for ws-station instead of
+#  deprecated timewindow.  These options can now be specified independently.
+#
+# 2012.100:
+#  - Parse site name in a new location of StationXML, site is now placed in the
+#  Site->Name element, was previously in the Site->Country element.
+#
+# 2012.102:
+#  - Correctly parse epoch times from channel epoch by skipping the new channel
+#  comment dates, this corrects the operating times in the metadata files.
+#
+# 2012.234:
+#  - Remove sorting, print data in order returned by the service.
+#  - Use vertical bars as field separators instead of commas, do not translate commas.
+#  - Do not convert dip to SAC convention, leave it in SEED convention.
+#
+# 2013.077:
+#  - Changed metadata parsing to understand FDSN StationXML schema.
+#  - Use the LWP::UserAgent method env_proxy() to check for and use connection
+#  proxy information from environment variables (e.g. http_proxy).
+#  - Add checking of environment variables that will override the web
+#  service base path (i.e. host name).
+#
+# 2013.186
+#  - Change service URL override command line options to match
+#  environment variables.
+#
+# 2013.197
+#  - Fix parsing of element values of "0".
+#
+# 2013.198
+#  - Add test for minimum version of LWP (libwww) module of 5.806.
+#
+# 2013.254
+#  - Allow validation of (virtual) network codes to contain a dash
+#  when parsing a BREQFAST file.
+#
+# 2014.056
+#  - Allow gzip'ed HTTP encoding for metadata requests if support
+#  exists on the local system.
+#
+# 2014.202
+#  - Exit with non-zero value on web service errors.
+#
+# 2014.316
+#  - Add -mts/-matchtimeseries option to turn submit the matchtimeseries
+#  parameter to the metadata service.
+#
+# Author: Chad Trabant, IRIS Data Management Center
+
+use strict;
+use File::Basename;
+use Getopt::Long;
+use LWP 5.806; # Require minimum version
+use LWP::UserAgent;
+use HTTP::Status qw(status_message);
+use HTTP::Date;
+use Time::HiRes;
+
+my $version = "2014.316";
+
+my $scriptname = basename($0);
+
+# Default web service base
+my $servicebase = 'http://service.iris.edu';
+
+# Check for environment variable overrides for servicebase
+$servicebase = $ENV{'SERVICEBASE'} if ( exists $ENV{'SERVICEBASE'} );
+
+# Default web service for metadata
+my $metadataservice = "$servicebase/fdsnws/station/1";
+
+# Check for environment variable override for metadataservice
+$metadataservice = $ENV{'METADATAWS'} if ( exists $ENV{'METADATAWS'} );
+
+# HTTP UserAgent reported to web services
+my $useragent = "$scriptname/$version Perl/$] " . new LWP::UserAgent->_agent;
+
+my $usage        = undef;
+my $verbose      = undef;
+my $nobsprint    = undef;
+
+my $net          = undef;
+my $sta          = undef;
+my $loc          = undef;
+my $chan         = undef;
+my $starttime    = undef;
+my $endtime      = undef;
+my $updatedafter = undef;
+my $matchtimeseries = undef;
+my $selectfile   = undef;
+my $bfastfile    = undef;
+my $stalevel     = undef;
+my $resplevel    = undef;
+my $appname      = undef;
+my $auth         = undef;
+my $outfile      = undef;
+my $xmlfile      = undef;
+my $exitvalue    = 0;
+
+my $inflater     = undef;
+
+# If Compress::Raw::Zlib is available configure inflater for RFC 1952 (gzip)
+if ( eval("use Compress::Raw::Zlib; 1") ) {
+  use Compress::Raw::Zlib;
+  $inflater = new Compress::Raw::Zlib::Inflate( -WindowBits => WANT_GZIP,
+                                                -ConsumeInput => 0 );
+}
+
+# Parse command line arguments
+Getopt::Long::Configure ("bundling_override");
+my $getoptsret = GetOptions ( 'help|usage|h'      => \$usage,
+                              'verbose|v+'        => \$verbose,
+                              'nobs'              => \$nobsprint,
+                              'net|N=s'           => \$net,
+                              'sta|S=s'           => \$sta,
+                              'loc|L=s'           => \$loc,
+                              'chan|C=s'          => \$chan,
+			      'starttime|s=s'     => \$starttime,
+			      'endtime|e=s'       => \$endtime,
+			      'updatedafter|ua=s' => \$updatedafter,
+			      'matchtimeseries|mts' => \$matchtimeseries,
+			      'selectfile|l=s'    => \$selectfile,
+			      'bfastfile|b=s'     => \$bfastfile,
+			      'stalevel|sta'      => \$stalevel,
+			      'resplevel|resp'    => \$resplevel,
+			      'appname|A=s'       => \$appname,
+			      'auth|a=s'          => \$auth,
+			      'outfile|o=s'       => \$outfile,
+			      'xmlfile|X=s'       => \$xmlfile,
+			      'metadataws=s'      => \$metadataservice,
+			    );
+
+my $required =  ( defined $net || defined $sta ||
+		  defined $loc || defined $chan ||
+		  defined $starttime || defined $endtime ||
+		  defined $selectfile || defined $bfastfile );
+
+if ( ! $getoptsret || $usage || ! $required ) {
+  print "$scriptname: collect channel metadata ($version)\n";
+  print "http://service.iris.edu/clients/\n\n";
+  print "Usage: $scriptname [options]\n\n";
+  print " Options:\n";
+  print " -v                Increase verbosity, may be specified multiple times\n";
+  print " -N,--net          Network code, list and wildcards (* and ?) accepted\n";
+  print " -S,--sta          Station code, list and wildcards (* and ?) accepted\n";
+  print " -L,--loc          Location ID, list and wildcards (* and ?) accepted\n";
+  print " -C,--chan         Channel codes, list and wildcards (* and ?) accepted\n";
+  print " -s starttime      Specify start time (YYYY-MM-DD,HH:MM:SS)\n";
+  print " -e endtime        Specify end time (YYYY-MM-DD,HH:MM:SS)\n";
+  print " -ua date          Limit to metadata updated after date (YYYY-MM-DD,HH:MM:SS)\n";
+  print " -mts              Limit to metadata where criteria match time series data\n";
+  print " -X xmlfile        Write raw returned FDSN StationXML to xmlfile\n";
+  print " -l listfile       Read list of selections from file\n";
+  print " -b bfastfile      Read list of selections from BREQ_FAST file\n";
+  print " -sta              Print station level information, default is channel\n";
+  print " -resp             Request response level information, no details printed\n";
+  print " -A appname        Application/version string for identification\n";
+  print "\n";
+  print " -o outfile        Write basic metadata to specified file instead of printing\n";
+  print "\n";
+  exit 1;
+}
+
+# Print script name and local time string
+if ( $verbose ) {
+  my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+  printf STDERR "$scriptname ($version) at %4d-%02d-%02d %02d:%02d:%02d\n", $year+1900, $mon+1, $mday, $hour, $min, $sec;
+}
+
+# Normalize time strings
+if ( $starttime ) {
+  my ($year,$month,$mday,$hour,$min,$sec,$subsec) = split (/[-:,.\s\/T]/, $starttime);
+  $starttime = sprintf ("%04d-%02d-%02dT%02d:%02d:%02d", $year, $month, $mday, $hour, $min, $sec);
+  $starttime .= ".$subsec" if ( $subsec );
+}
+
+if ( $endtime ) {
+  my ($year,$month,$mday,$hour,$min,$sec,$subsec) = split (/[-:,.\s\/T]/, $endtime);
+  $endtime = sprintf ("%04d-%02d-%02dT%02d:%02d:%02d", $year, $month, $mday, $hour, $min, $sec);
+  $endtime .= ".$subsec" if ( $subsec );
+}
+
+if ( $updatedafter ) {
+  my ($year,$month,$mday,$hour,$min,$sec,$subsec) = split (/[-:,.\s\/T]/, $updatedafter);
+  $updatedafter = sprintf ("%04d-%02d-%02dT%02d:%02d:%02d", $year, $month, $mday, $hour, $min, $sec);
+  $updatedafter .= ".$subsec" if ( $subsec );
+}
+
+# An array to hold data selections
+my @selections = ();
+
+# Add command line selection to list
+if ( defined $net || defined $sta || defined $loc || defined $chan ||
+     defined $starttime || defined $endtime ) {
+  push (@selections,"$net|$sta|$loc|$chan|$starttime|$endtime");
+}
+
+# Read selection list file
+if ( $selectfile ) {
+  print STDERR "Reading data selection from list file '$selectfile'\n";
+  &ReadSelectFile ($selectfile);
+}
+
+# Read BREQ_FAST file
+if ( $bfastfile ) {
+  print STDERR "Reading data selection from BREQ_FAST file '$bfastfile'\n";
+  &ReadBFastFile ($bfastfile);
+}
+
+# Report complete data selections
+if ( $verbose > 2 ) {
+  print STDERR "== Data selections ==\n";
+  foreach my $select ( @selections ) {
+    print STDERR "    $select\n";
+  }
+}
+
+# An array to hold channel list and metadata
+my @metadata = ();
+my $metadataxml;
+my $datasize;
+
+# Fetch metadata from the station web service
+my $selectidx = 0;
+foreach my $selection ( @selections ) {
+  my ($snet,$ssta,$sloc,$schan,$sstart,$send) = split (/\|/,$selection);
+  &FetchMetaData($snet,$ssta,$sloc,$schan,$sstart,$send);
+  $selectidx++;
+}
+
+# Write to either specified output file or stdout
+my $metafile = ( $outfile ) ? $outfile : "-";
+
+# Write metadata to file
+if ( $metafile ) {
+  if ( scalar @metadata <= 0 ) {
+    printf STDERR "No metdata available\n", scalar @metadata;
+  }
+  elsif ( ! defined $stalevel ) {
+    printf STDERR "Writing metadata (%d channel epochs) file\n", scalar @metadata if ( $verbose );
+
+    open (META, ">$metafile") || die "Cannot open metadata file '$metafile': $!\n";
+
+    # Print header line
+    print META "#net|sta|loc|chan|lat|lon|elev|depth|azimuth|dip|instrument|scale|scalefreq|scaleunits|samplerate|start|end\n";
+
+    foreach my $channel ( @metadata ) {
+      my ($net,$sta,$loc,$chan,$start,$end,$lat,$lon,$elev,$depth,$azimuth,$dip,$instrument,$samplerate,$sens,$sensfreq,$sensunit) =
+	split (/\|/, $channel);
+
+      $sensfreq = sprintf ("%0g", $sensfreq);
+      $samplerate = sprintf ("%0g", $samplerate);
+
+      print META "$net|$sta|$loc|$chan|$lat|$lon|$elev|$depth|$azimuth|$dip|$instrument|$sens|$sensfreq|$sensunit|$samplerate|$start|$end\n";
+    }
+
+    close META;
+  }
+  else {
+    printf STDERR "Writing metadata (%d station epochs) file\n", scalar @metadata if ( $verbose );
+
+    open (META, ">$metafile") || die "Cannot open metadata file '$metafile': $!\n";
+
+    # Print header line
+    print META "#net|sta|lat|lon|elev|site|start|end\n";
+
+    foreach my $station ( @metadata ) {
+      my ($net,$sta,$start,$end,$lat,$lon,$elev,$site) = split (/\|/, $station);
+
+      print META "$net|$sta|$lat|$lon|$elev|$site|$start|$end\n";
+    }
+
+    close META;
+  }
+}
+
+my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+printf STDERR "DONE at %4d-%02d-%02d %02d:%02d:%02d\n", $year+1900, $mon+1, $mday, $hour, $min, $sec;
+
+exit $exitvalue;
+## End of main
+
+
+######################################################################
+# ReadSelectFile:
+#
+# Read selection list file and add entries to the @selections array.
+#
+# Selection lines are expected to be in the following form:
+#
+# "Net Sta Loc Chan Start End"
+#
+# The Net, Sta, Loc and Channel fields are required and can be
+# specified as wildcards.
+######################################################################
+sub ReadSelectFile {
+  my $selectfile = shift;
+
+  open (SF, "<$selectfile") || die "Cannot open '$selectfile': $!\n";
+
+  foreach my $line ( <SF> ) {
+    chomp $line;
+    next if ( $line =~ /^\#/ ); # Skip comment lines
+
+    my ($net,$sta,$loc,$chan,$start,$end) = split (' ', $line);
+
+    next if ( ! defined $chan );
+
+    # Normalize time strings
+    if ( $start ) {
+      my ($year,$month,$mday,$hour,$min,$sec,$subsec) = split (/[-:,.\s\/T]/, $start);
+      $start = sprintf ("%04d-%02d-%02dT%02d:%02d:%02d", $year, $month, $mday, $hour, $min, $sec);
+      $start .= ".$subsec" if ( $subsec );
+    }
+
+    if ( $end ) {
+      my ($year,$month,$mday,$hour,$min,$sec,$subsec) = split (/[-:,.\s\/T]/, $end);
+      $end = sprintf ("%04d-%02d-%02dT%02d:%02d:%02d", $year, $month, $mday, $hour, $min, $sec);
+      $end .= ".$subsec" if ( $subsec );
+    }
+
+    # Add selection to global list
+    push (@selections,"$net|$sta|$loc|$chan|$start|$end");
+  }
+
+  close SF;
+} # End of ReadSelectFile()
+
+
+######################################################################
+# ReadBFastFile:
+#
+# Read BREQ_FAST file and add entries to the @selections array.
+#
+######################################################################
+sub ReadBFastFile {
+  my $bfastfile = shift;
+
+  open (BF, "<$bfastfile") || die "Cannot open '$bfastfile': $!\n";
+
+  my $linecount = 0;
+  BFLINE: foreach my $line ( <BF> ) {
+    chomp $line;
+    $linecount++;
+    next if ( ! $line ); # Skip empty lines
+
+    next if ( $line =~ /^\./ ); # Skip other header lines
+
+    my ($sta,$net,$syear,$smon,$sday,$shour,$smin,$ssec,$eyear,$emon,$eday,$ehour,$emin,$esec,$count,@chans) = split (' ', $line);
+
+    # Simple validation of BREQ FAST fields
+    if ( $sta !~ /^[A-Za-z0-9*?]{1,5}$/ ) {
+      print "Unrecognized station code: '$sta', skipping line $linecount\n" if ( $verbose );
+      next;
+    }
+    if ( $net !~ /^[-_A-Za-z0-9*?]+$/ ) {
+      print "Unrecognized network code: '$net', skipping line $linecount\n" if ( $verbose );
+      next;
+    }
+    if ( $syear !~ /^\d\d\d\d$/ ) {
+      print "Unrecognized start year: '$syear', skipping line $linecount\n" if ( $verbose );
+      next;
+    }
+    if ( $smon !~ /^\d{1,2}$/ ) {
+      print "Unrecognized start month: '$smon', skipping line $linecount\n" if ( $verbose );
+      next;
+    }
+    if ( $sday !~ /^\d{1,2}$/ ) {
+      print "Unrecognized start day: '$sday', skipping line $linecount\n" if ( $verbose );
+      next;
+    }
+    if ( $shour !~ /^\d{1,2}$/ ) {
+      print "Unrecognized start hour: '$shour', skipping line $linecount\n" if ( $verbose );
+      next;
+    }
+    if ( $smin !~ /^\d{1,2}$/ ) {
+      print "Unrecognized start min: '$smin', skipping line $linecount\n" if ( $verbose );
+      next;
+    }
+    if ( $ssec !~ /^\d{1,2}\.?\d{0,6}?$/ ) {
+      print "Unrecognized start seconds: '$ssec', skipping line $linecount\n" if ( $verbose );
+      next;
+    }
+    if ( $eyear !~ /^\d\d\d\d$/ ) {
+      print "Unrecognized end year: '$eyear', skipping line $linecount\n" if ( $verbose );
+      next;
+    }
+    if ( $emon !~ /^\d{1,2}$/ ) {
+      print "Unrecognized end month: '$emon', skipping line $linecount\n" if ( $verbose );
+      next;
+    }
+    if ( $eday !~ /^\d{1,2}$/ ) {
+      print "Unrecognized end day: '$eday', skipping line $linecount\n" if ( $verbose );
+      next;
+    }
+    if ( $ehour !~ /^\d{1,2}$/ ) {
+      print "Unrecognized end hour: '$ehour', skipping line $linecount\n" if ( $verbose );
+      next;
+    }
+    if ( $emin !~ /^\d{1,2}$/ ) {
+      print "Unrecognized end min: '$emin', skipping line $linecount\n" if ( $verbose );
+      next;
+    }
+    if ( $esec !~ /^\d{1,2}\.?\d{0,6}?$/ ) {
+      print "Unrecognized end seconds: '$esec', skipping line $linecount\n" if ( $verbose );
+      next;
+    }
+    if ( $count !~ /^\d+$/ || $count <= 0 ) {
+      print "Invalid channel count field: '$count', skipping line $linecount\n" if ( $verbose );
+      next;
+    }
+    if ( scalar @chans <= 0 ) {
+      print "No channels specified, skipping line $linecount\n" if ( $verbose );
+      next;
+    }
+
+    # Extract location ID if present, i.e. if channel count is one less than present
+    my $loc = undef;
+    $loc = pop @chans if ( scalar @chans == ($count+1) );
+
+    if ( $loc && $loc !~ /^[A-Za-z0-9*?\-]{1,2}$/ ) {
+      print "Unrecognized location ID: '$loc', skipping line $linecount\n" if ( $verbose );
+      next;
+    }
+
+    foreach my $chan ( @chans ) {
+      if ( $chan !~ /^[A-Za-z0-9*?]{3,3}$/ ) {
+	print "Unrecognized channel codes: '$chan', skipping line $linecount\n" if ( $verbose );
+	next BFLINE;
+      }
+    }
+
+    if ( scalar @chans != $count ) {
+      printf "Channel count field ($count) does not match number of channels specified (%d), skipping line $linecount\n",
+	scalar @chans if ( $verbose );
+      next;
+    }
+
+    # Normalize time strings
+    my ($ssec,$ssub) = split (/\./, $ssec);
+    my $start = sprintf ("%04d-%02d-%02dT%02d:%02d:%02d", $syear, $smon, $sday, $shour, $smin, $ssec);
+    $start .= ".$ssub" if ( $ssub );
+    my ($esec,$esub) = split (/\./, $esec);
+    my $end = sprintf ("%04d-%02d-%02dT%02d:%02d:%02d", $eyear, $emon, $eday, $ehour, $emin, $esec);
+    $end .= ".$esub" if ( $esub );
+
+    # Add selection to global list for each channel
+    foreach my $chan ( @chans ) {
+      push (@selections,"$net|$sta|$loc|$chan|$start|$end");
+    }
+  }
+
+  close BF;
+} # End of ReadBFastFile()
+
+
+######################################################################
+# FetchMetaData:
+#
+# Collect metadata and expand wildcards for selected data set.
+#
+# Resulting metadata is placed in the global @metadata array with each
+# entry taking the following form:
+#   "net|sta|loc|chan|start|end|lat|lon|elev|depth|azimuth|dip|instrument|samplerate|sensitivity|sensfreq|sensunits"
+#
+######################################################################
+sub FetchMetaData {
+  my ($rnet,$rsta,$rloc,$rchan,$rstart,$rend) = @_;
+
+  # Create HTTP user agent
+  my $ua = RequestAgent->new();
+  $ua->env_proxy;
+
+  my $level = "channel";
+  $level = "station" if ( $stalevel );
+  $level = "response" if ( $resplevel );
+
+  # Create web service URI
+  my $uri = "${metadataservice}/query?level=$level";
+  $uri .= "&network=$rnet" if ( $rnet );
+  $uri .= "&station=$rsta" if ( $rsta );
+  $uri .= "&location=$rloc" if ( $rloc );
+  $uri .= "&channel=$rchan" if ( $rchan );
+  $uri .= "&starttime=$rstart" if ( $rstart );
+  $uri .= "&endtime=$rend" if ( $rend );
+  $uri .= "&updatedafter=$updatedafter" if ( $updatedafter );
+  $uri .= "&matchtimeseries=TRUE" if ( $matchtimeseries );
+
+  my $ftime = Time::HiRes::time;
+
+  print STDERR "Metadata URI: '$uri'\n" if ( $verbose > 1 );
+
+  print STDERR "Fetching metadata :: " if ( $verbose );
+
+  $datasize = 0;
+  $metadataxml = "";
+
+  # Fetch metadata from web service using callback routine
+  my $response = ( $inflater ) ?
+    $ua->get($uri, 'Accept-Encoding' => 'gzip', ':content_cb' => \&MDCallBack ) :
+    $ua->get($uri, ':content_cb' => \&MDCallBack );
+
+  $inflater->inflateReset if ( $inflater );
+
+  if ( $response->code == 204 ) {
+    print (STDERR "No data available\n") if ( $verbose );
+    return;
+  }
+  elsif ( ! $response->is_success() ) {
+    print (STDERR "Error fetching data: "
+	   . $response->code . " :: " . status_message($response->code) . "\n");
+    print STDERR "------\n" . $response->decoded_content . "\n------\n";
+    print STDERR "  URI: '$uri'\n" if ( $verbose > 1 );
+
+    $exitvalue = 1;
+  }
+  else {
+    printf (STDERR "%s\n", ($nobsprint)?sizestring($datasize):"") if ( $verbose );
+  }
+
+  my $duration = Time::HiRes::time - $ftime;
+  my $rate = $datasize/(($duration)?$duration:0.000001);
+  printf (STDERR "Received %s of metadata in %.1f seconds (%s/s)\n",
+	  sizestring($datasize), $duration, sizestring($rate));
+
+  # Return if no metadata received
+  return if ( length $metadataxml <= 0 );
+
+  # Create stream oriented XML parser instance
+  use XML::SAX;
+  my $parser = undef;
+  if ( ! defined $stalevel ) {
+    $parser = new XML::SAX::ParserFactory->parser( Handler => MDSHandlerChannel->new );
+  }
+  else {
+    $parser = new XML::SAX::ParserFactory->parser( Handler => MDSHandlerStation->new );
+  }
+
+  my $totalepochs = 0;
+
+  my $ptime = Time::HiRes::time;
+
+  print STDERR "Parsing XML metadata... " if ( $verbose );
+
+  # Open file to store metadata XML
+  my $xmlfileidx = ( $selectidx ) ? "$xmlfile.$selectidx" : $xmlfile; # Make separate files for each request
+  my $metadataxmlfile = ( $xmlfile ) ? $xmlfileidx : "metadata-$$.xml";
+  if ( open (MXML, ">$metadataxmlfile") ) {
+    # Write XML and close file
+    print MXML $metadataxml;
+    close MXML;
+
+    # Parse XML metadata from file
+    $parser->parse_file ($metadataxmlfile);
+
+    # Remove temporary XML metadata file
+    if ( ! defined $xmlfile ) {
+      if ( ! unlink $metadataxmlfile ) {
+	print STDERR "Cannot remove temporary XML metadata file: $!\n";
+      }
+    }
+  }
+  # Otherwise parse the XML in memory
+  else {
+    printf STDERR " in memory (possibly slow), " if ( $verbose );
+
+    # Parse XML metadata from string
+    $parser->parse_string ($metadataxml);
+  }
+
+  printf STDERR "Done (%.1f seconds)\n", Time::HiRes::time - $ptime if ( $verbose );
+
+  my $duration = Time::HiRes::time - $ftime;
+  my $rate = $datasize/(($duration)?$duration:0.000001);
+  printf (STDERR "Processed metadata for $totalepochs %s epochs in %.1f seconds (%s/s)\n",
+	  ($stalevel)?"station":"channel",$duration, sizestring($rate));
+
+  ## End of this routine, below is the XML parsing handlers used above
+
+  ## Beginning of SAX MDSHandlerChannel, event-based streaming XML parsing for Channel level FDSN StationXML
+  package MDSHandlerChannel;
+  use base qw(XML::SAX::Base);
+  use HTTP::Date;
+
+  my $inchannel = 0;
+  my $inlat = 0;
+  my $inlon = 0;
+  my $inelevation = 0;
+  my $indepth = 0;
+  my $inazimuth = 0;
+  my $indip = 0;
+  my $insensor = 0;
+  my $insensortype = 0;
+  my $insamplerate = 0;
+
+  my $ininstsens = 0;
+  my $insensvalue = 0;
+  my $insensfreq = 0;
+  my $ininputunits = 0;
+  my $inunitname = 0;
+
+  my ($net,$sta,$loc,$chan,$start,$end,$lat,$lon,$elev,$depth,$azimuth,$dip,$instrument,$samplerate,$sens,$sensfreq,$sensunit) = (undef) x 17;
+
+  sub start_element {
+    my ($self,$element) = @_;
+
+    if ( $element->{Name} eq "Network" ) {
+      $net = $element->{Attributes}->{'{}code'}->{Value};
+    }
+
+    elsif ( $element->{Name} eq "Station" ) {
+      ($sta,$loc,$chan,$start,$end,$lat,$lon,$elev,$depth,$azimuth,$dip,$instrument,$samplerate,$sens,$sensfreq,$sensunit) = (undef) x 16;
+
+      $sta = $element->{Attributes}->{'{}code'}->{Value};
+    }
+
+    elsif ( $element->{Name} eq "Channel" ) {
+      $loc = $element->{Attributes}->{'{}locationCode'}->{Value};
+      $chan = $element->{Attributes}->{'{}code'}->{Value};
+      $start = $element->{Attributes}->{'{}startDate'}->{Value};
+      $end = $element->{Attributes}->{'{}endDate'}->{Value};
+      $inchannel = 1;
+    }
+
+    if ( $inchannel ) {
+      if ( $element->{Name} eq "Latitude" ) { $inlat = 1; }
+      elsif ( $element->{Name} eq "Longitude" ) { $inlon = 1; }
+      elsif ( $element->{Name} eq "Elevation" ) { $inelevation = 1; }
+      elsif ( $element->{Name} eq "Depth" ) { $indepth = 1; }
+      elsif ( $element->{Name} eq "Azimuth" ) { $inazimuth = 1; }
+      elsif ( $element->{Name} eq "Dip" ) { $indip = 1; }
+      elsif ( $element->{Name} eq "SampleRate" ) { $insamplerate = 1; }
+      elsif ( $element->{Name} eq "Sensor" ) { $insensor = 1; }
+      elsif ( $element->{Name} eq "InstrumentSensitivity" ) { $ininstsens = 1; }
+    }
+
+    if ( $insensor ) {
+      if ( $element->{Name} eq "Type" ) { $insensortype = 1; }
+    }
+
+    if ( $ininstsens ) {
+      if ( $element->{Name} eq "Value" ) { $insensvalue = 1; }
+      elsif ( $element->{Name} eq "Frequency" ) { $insensfreq = 1; }
+      elsif ( $element->{Name} eq "InputUnits" ) { $ininputunits = 1; }
+    }
+
+    if ( $ininputunits ) {
+      if ( $element->{Name} eq "Name" ) { $inunitname = 1; }
+    }
+  }
+
+  sub end_element {
+    my ($self,$element) = @_;
+
+    if ( $element->{Name} eq "Network" ) {
+      $net = 0;
+    }
+
+    elsif ( $element->{Name} eq "Station" ) {
+      $sta = 0;
+    }
+
+    elsif ( $element->{Name} eq "Channel" ) {
+      # Track epoch count
+      $totalepochs++;
+
+      # Translate metadata location ID to "--" if it's spaces
+      my $dloc = ( $loc eq "  " ) ? "--" : $loc;
+
+      # Remove newlines, returns & trailing spaces in metadata instrument name
+      $instrument =~ s/[\n\r]//g;
+      $instrument =~ s/\s*$//g;
+
+      # Cleanup start and end strings
+      ($start) = $start =~ /^(\d{4,4}[-\/,:]\d{1,2}[-\/,:]\d{1,2}[-\/,:T]\d{1,2}[-\/,:]\d{1,2}[-\/,:]\d{1,2}).*/;
+      ($end) = $end =~ /^(\d{4,4}[-\/,:]\d{1,2}[-\/,:]\d{1,2}[-\/,:T]\d{1,2}[-\/,:]\d{1,2}[-\/,:]\d{1,2}).*/;
+
+      # Push channel epoch metadata into storage array
+      push (@metadata, "$net|$sta|$dloc|$chan|$start|$end|$lat|$lon|$elev|$depth|$azimuth|$dip|$instrument|$samplerate|$sens|$sensfreq|$sensunit");
+
+      # Reset Epoch level fields
+      ($loc,$chan,$start,$end,$lat,$lon,$elev,$depth,$azimuth,$dip,$instrument,$samplerate,$sens,$sensfreq,$sensunit) = (undef) x 15;
+      $inchannel = 0;
+    }
+
+    if ( $inchannel ) {
+      if ( $element->{Name} eq "Latitude" ) { $inlat = 0; }
+      elsif ( $element->{Name} eq "Longitude" ) { $inlon = 0; }
+      elsif ( $element->{Name} eq "Elevation" ) { $inelevation = 0; }
+      elsif ( $element->{Name} eq "Depth" ) { $indepth = 0; }
+      elsif ( $element->{Name} eq "Azimuth" ) { $inazimuth = 0; }
+      elsif ( $element->{Name} eq "Dip" ) { $indip = 0; }
+      elsif ( $element->{Name} eq "SampleRate" ) { $insamplerate = 0; }
+      elsif ( $element->{Name} eq "Sensor" ) { $insensor = 0; }
+      elsif ( $element->{Name} eq "InstrumentSensitivity" ) { $ininstsens = 0; }
+    }
+
+    if ( $insensor ) {
+      if ( $element->{Name} eq "Type" ) { $insensortype = 0; }
+    }
+
+    if ( $ininstsens ) {
+      if ( $element->{Name} eq "Value" ) { $insensvalue = 0; }
+      elsif ( $element->{Name} eq "Frequency" ) { $insensfreq = 0; }
+      elsif ( $element->{Name} eq "InputUnits" ) { $ininputunits = 0; }
+    }
+
+    if ( $ininputunits ) {
+      if ( $element->{Name} eq "Name" ) { $inunitname = 0; }
+    }
+  }
+
+  sub characters {
+    my ($self,$element) = @_;
+
+    if ( defined $element->{Data} ) {
+      if ( $inlat ) { $lat .= $element->{Data}; }
+      elsif ( $inlon ) { $lon .= $element->{Data}; }
+      elsif ( $inelevation ) { $elev .= $element->{Data}; }
+      elsif ( $indepth ) { $depth .= $element->{Data}; }
+      elsif ( $inazimuth ) { $azimuth .= $element->{Data}; }
+      elsif ( $indip ) { $dip .= $element->{Data}; }
+      elsif ( $insamplerate ) { $samplerate .= $element->{Data}; }
+
+      elsif ( $insensortype ) { $instrument .= $element->{Data}; }
+
+      elsif ( $insensvalue ) { $sens .= $element->{Data}; }
+      elsif ( $insensfreq ) { $sensfreq .= $element->{Data}; }
+      elsif ( $inunitname ) { $sensunit .= $element->{Data}; }
+    }
+  } # End of SAX MDSHandlerChannel
+
+  ## Beginning of SAX MDSHandlerStation, event-based streaming XML parsing for Station level FDSN StationXML
+  package MDSHandlerStation;
+  use base qw(XML::SAX::Base);
+  use HTTP::Date;
+
+  my $instation = 0;
+  my $inlat = 0;
+  my $inlon = 0;
+  my $inelevation = 0;
+  my $insite = 0;
+  my $inname = 0;
+
+  my ($net,$sta,$start,$end,$lat,$lon,$elev,$site) = (undef) x 8;
+
+  sub start_element {
+    my ($self,$element) = @_;
+
+    if ( $element->{Name} eq "Network" ) {
+      $net = $element->{Attributes}->{'{}code'}->{Value};
+    }
+
+    elsif ( $element->{Name} eq "Station" ) {
+      ($sta,$start,$end,$lat,$lon,$elev,$site) = (undef) x 7;
+
+      $sta = $element->{Attributes}->{'{}code'}->{Value};
+      $start = $element->{Attributes}->{'{}startDate'}->{Value};
+      $end = $element->{Attributes}->{'{}endDate'}->{Value};
+      $instation = 1;
+    }
+
+    if ( $instation ) {
+      if ( $element->{Name} eq "Latitude" ) { $inlat = 1; }
+      elsif ( $element->{Name} eq "Longitude" ) { $inlon = 1; }
+      elsif ( $element->{Name} eq "Elevation" ) { $inelevation = 1; }
+      elsif ( $element->{Name} eq "Site" ) { $insite = 1; }
+    }
+
+    if ( $insite ) {
+      if ( $element->{Name} eq "Name" ) { $inname = 1; }
+    }
+  }
+
+  sub end_element {
+    my ($self,$element) = @_;
+
+    if ( $element->{Name} eq "Network" ) {
+      $net = 0;
+    }
+
+    elsif ( $element->{Name} eq "Station" ) {
+      # Track epoch count
+      $totalepochs++;
+
+      # Remove newlines, returns and trailing spaces in site name
+      $site =~ s/[\n\r]//g;
+      $site =~ s/\s*$//g;
+
+      # Cleanup start and end strings
+      ($start) = $start =~ /^(\d{4,4}[-\/,:]\d{1,2}[-\/,:]\d{1,2}[-\/,:T]\d{1,2}[-\/,:]\d{1,2}[-\/,:]\d{1,2}).*/;
+      ($end) = $end =~ /^(\d{4,4}[-\/,:]\d{1,2}[-\/,:]\d{1,2}[-\/,:T]\d{1,2}[-\/,:]\d{1,2}[-\/,:]\d{1,2}).*/;
+
+      # Push channel epoch metadata into storage array
+      push (@metadata, "$net|$sta|$start|$end|$lat|$lon|$elev|$site");
+
+      # Reset StationEpoch level fields
+      ($sta,$start,$end,$lat,$lon,$elev,$site) = (undef) x 7;
+      $instation = 0;
+    }
+
+    if ( $instation ) {
+      if ( $element->{Name} eq "Latitude" ) { $inlat = 0; }
+      elsif ( $element->{Name} eq "Longitude" ) { $inlon = 0; }
+      elsif ( $element->{Name} eq "Elevation" ) { $inelevation = 0; }
+      elsif ( $element->{Name} eq "Site" ) { $insite = 0; }
+    }
+
+    if ( $insite ) {
+      if ( $element->{Name} eq "Name" ) { $inname = 0; }
+    }
+  }
+
+  sub characters {
+    my ($self,$element) = @_;
+
+    if ( defined $element->{Data} ) {
+      if ( $inlat ) { $lat .= $element->{Data}; }
+      elsif ( $inlon ) { $lon .= $element->{Data}; }
+      elsif ( $inelevation ) { $elev .= $element->{Data}; }
+
+      elsif ( $inname ) { $site .= $element->{Data}; }
+    }
+  } # End of SAX MDSHandlerStation
+} # End of FetchMetaData()
+
+
+######################################################################
+# MDCallBack:
+#
+# A call back for LWP downloading of metadata.
+#
+# Add received data to metadataxml string, tally up the received data
+# size and print and updated (overwriting) byte count string.
+######################################################################
+sub MDCallBack {
+  my ($data, $response, $protocol) = @_;
+  $datasize += length($data);
+
+  if ( $response->content_encoding() =~ /gzip/ ) {
+    my $datablock = "";
+    $inflater->inflate($data, $datablock);
+    $metadataxml .= $datablock;
+  }
+  else {
+    $metadataxml .= $data;
+  }
+
+  if ( $verbose && ! $nobsprint ) {
+    printf (STDERR "%-10.10s\b\b\b\b\b\b\b\b\b\b", sizestring($datasize));
+  }
+}
+
+
+######################################################################
+# sizestring (bytes):
+#
+# Return a clean size string for a given byte count.
+######################################################################
+sub sizestring { # sizestring (bytes)
+  my $bytes = shift;
+
+  if ( $bytes < 1000 ) {
+    return sprintf "%d Bytes", $bytes;
+  }
+  elsif ( ($bytes / 1024) < 1000 ) {
+    return sprintf "%.1f KB", $bytes / 1024;
+  }
+  elsif ( ($bytes / 1024 / 1024) < 1000 ) {
+    return sprintf "%.1f MB", $bytes / 1024 / 1024;
+  }
+  elsif ( ($bytes / 1024 / 1024 / 1024) < 1000 ) {
+    return sprintf "%.1f GB", $bytes / 1024 / 1024 / 1024;
+  }
+  elsif ( ($bytes / 1024 / 1024 / 1024 / 1024) < 1000 ) {
+    return sprintf "%.1f TB", $bytes / 1024 / 1024 / 1024 / 1024;
+  }
+  else {
+    return "";
+  }
+} # End of sizestring()
+
+
+######################################################################
+#
+# Package RequestAgent: a superclass for LWP::UserAgent with override
+# of LWP::UserAgent methods to set default user agent and handle
+# authentication credentials.
+#
+######################################################################
+BEGIN {
+  use LWP;
+  package RequestAgent;
+  our @ISA = qw(LWP::UserAgent);
+
+  sub new
+    {
+      my $self = LWP::UserAgent::new(@_);
+      my $fulluseragent = $useragent;
+      $fulluseragent .= " ($appname)" if ( $appname );
+      $self->agent($fulluseragent);
+      $self;
+    }
+
+  sub get_basic_credentials
+    {
+      my ($self, $realm, $uri) = @_;
+
+      if ( defined $auth ) {
+        return split(':', $auth, 2);
+      }
+      elsif (-t) {
+        my $netloc = $uri->host_port;
+        print "\n";
+        print "Enter username for $realm at $netloc: ";
+        my $user = <STDIN>;
+        chomp($user);
+        return (undef, undef) unless length $user;
+        print "Password: ";
+        system("stty -echo");
+        my $password = <STDIN>;
+        system("stty echo");
+        print "\n";  # because we disabled echo
+        chomp($password);
+        return ($user, $password);
+      }
+      else {
+        return (undef, undef)
+      }
+    }
+} # End of LWP::UserAgent override
