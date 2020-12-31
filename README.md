@@ -64,7 +64,7 @@ matploblib
   - Antelope
 
 - Data Source
-  - [IRIS](CUHK_Seismology_Python/Data_Management/IRIS_fetch/)
+  - [IRIS](Data_Management/IRIS_fetch/)
  
 
 ---
