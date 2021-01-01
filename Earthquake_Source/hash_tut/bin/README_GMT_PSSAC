@@ -1,0 +1,24 @@
+# Basic instructions for gmt sac (pssac)
+# Created by jw, 2020/03/25
+
+### Simple plot   -R/starttime/endtime/minamplitude/maxamplitude
+# list essential informations for the above setting:  
+# `saclst b e depmax depmin f [.sac] ` or use 'a' instead of 'b' for p arrival
+gmt sac -JX20c/10c -R0/540/-120000/120000 2020004225500.00.HKPS.BHZ -png testing
+
+
+### Plot waveform on a map  
+    -C[t0/t1]           (time length of the waveform, t0 and t1 in seconds)
+    -F[i][q][r]         (Filter: [i] integral [q]sqrt [r]remove mean
+    -Msize[unit]        (amplitude of the wave)  
+    -Q                  (plot vertically) 
+    -S[i]scale[unit]    (time axis length)
+    -T[+ttmark][+rreduce_vel][+sshift]  (Reference starttime)
+        tmark -5(b) -4(e) -3(o) -2(a) 0-9(t0-t9) # SAC header
+    -Wpen               (waveform pen properties)
+    -t[transpart]       (0 - 100 transperancy)
+gmt begin map png
+gmt sac *BHZ* -JM15c -R100/130/15/25 -Baf -M1i -S300c
+saclst stlo stla f *BHZ* | gmt plot -St0.4c -Gblack -i1,2
+gmt end
+

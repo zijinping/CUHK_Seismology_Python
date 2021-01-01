@@ -1,0 +1,124 @@
+#######################################
+# Welcome to hash tutorial (ESSC 4140)
+#   Created by Jw @2020.02.29
+#######################################
+
+Hash is a program to compute the DC solution from the inversion of the P-wave
+first motion data. 
+
+Here we have some read data from the Hong Kong Observatory and the Earthquake
+Administration of Guangdong Province, CEA of the recent earthquakes (early 2020)
+occured near the Lantau Island. The waveform data is stored under the DATA
+directory and in SAC format. 
+
+Some useful scripts are also provided the bin directory. The usage of the
+script can refer to the tutorial ppt and the scirpts' comments. 
+
+In this tutorial, we would try to determine the first motion polarity from the
+read data and try to do the inversion via HASH. Detailed instructions are listed
+in the tutorial ppt. ( https://bit.ly/3axFnV8 )
+
+
+############################
+# HASH MANUAL SECTION
+############################
+COMPILATION & RUN THE CODE
+
+    To compile, 
+        type `make hash_driverX` where "X" is the example number 1-5
+
+    To run, 
+        type `hash_driverX` to run interactively, 
+        or type `hash_driverX < exampleX.inp` to run using the given control
+        file.
+
+EXAMPLES in HASH
+
+    The essential files and parameters to run the examples are included in exampleX.inp
+
+    Example 1
+        Compute DC by azimuth and takeoff angle of each stations with estimated
+        uncertainties of both of these angels.
+
+    Example 2
+        Plausible velocity models to calculate takeoff angles using 1D ray-
+        tracing routine. Each trial uses different combination of velocity 
+        model and pretured soure depth to compute sets of takoff angles.
+
+    Example 3
+        S/P amplitdue ratios used to compute DC.
+
+    Example 4
+        Updated with recent SCEDEC formates, which includes 5-charater 
+        stations name.
+
+    Example 5
+        Uses output from the program SIMULPS to get azimuth and take-off angles
+        for ray tracing in 3D velocity model.
+
+ESSENTIAL FILES in HASH
+
+    Include Files:  - to configure the program limitations
+
+        param.inc   -   set max. size of inp/out arrays
+        rot.inc     -   set min grid angle size and max. mts
+        vel.inc     -   parameters for 1D ray tracer
+
+    Input Files:
+        (Prefer to use Example 2 instead of Example 1)
+
+        P-polarity Files:
+
+            Example 2: north2.phase - event and polarities
+                
+                North2.phase
+                Polarity line: IR2  CI  VHZ I D
+                    
+                    Variable    Format Value    Columns
+                    ===================================
+                    station     a4      IR2     1-4
+                    network     a2      CI      6-7
+                    component   a3      VHZ     10-12
+                    P onset I/E a1      I       14
+                    Polarity    a1      D       16
+           
+           Example 1: north1.phase - event and polarities
+
+                Eventline: 94 1211104155034 1455118 3706 181323 ...
+
+                    VariableFormat  Value   Columns
+                    ===============================
+                    year:   5i2     94      1-10
+                    month:  5i2     1
+                    day:    5i2     21
+                    hour:   5i2     11
+                    minute: 5i2     04
+                    seconds: f4.2   15.50   11-14
+                    lat,deg: i2     34      15-16
+                    lat,min: f4.2   14.55   18-21
+                    lon,deg: i3     118     22-24
+                    lon,min: f4.2   37.06   26-29
+                    depth:  f5.2    18.13   30-34
+                    mag:    f2.1    2.3     35-36
+                    ...
+
+
+                North1.phase
+                Polarity line: IR2 IPD0                   0                               258121           51  10   1     X   VHZ
+                    
+                    Variable    Format  Value   Columns
+                    ===================================
+                    station         a4      IR2     1-4
+                    polarity        a1      D       7
+                    quality         i1      0       8
+                    source-sta dist f4.1    25.8    59-62
+                    takeoff angle   i3      121     66-68 (63-65)
+                    azimuth         i3      51      79-81 (75-78)
+        
+        Types of input files:
+
+            .phase
+            .amp
+            .simulps (SIMULPS 3D ray-tracing files)
+            Velocity Model Files (free format)      e.g. vz.socal
+            .stations
