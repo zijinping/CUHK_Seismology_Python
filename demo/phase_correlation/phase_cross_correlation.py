@@ -2,6 +2,8 @@ from obspy import read,read_events,UTCDateTime,Stream
 from obspy.geodetics.base import gps2dist_azimuth
 import glob
 from obspy.signal.cross_correlation import correlate, xcorr_max
+import multiprocessing
+import time
 import re
 import os
 
@@ -34,6 +36,15 @@ def run_cc(i,event_id_mapper,event_id_1,event_id_2,event_p_st,event_s_st,target_
                 f.write("%s %6.3f %6.3f %s \n" %(link[0][0:2]+link[0][0:5],link[1],link[2],link[3]))
         f.close()
 
+def run_parallel(i,event_id_1,remain_event_list,event_lat,event_lon,event_pair_id,event_id_mapper,event_p_st,event_s_st,target_folder):
+    for event_id_2 in remain_event_list:
+            dist,_,_ = gps2dist_azimuth(event_lat[event_id_1],event_lon[event_id_1],event_lat[event_id_2],event_lon[event_id_2])
+            if dist/1000 > max_sep:
+                continue
+            pair_id = event_id_1+event_id_2
+            pair_id_mapper = [event_id_1,event_id_2,event_id_mapper[event_id_1],event_id_mapper[event_id_2]]
+            event_pair_id[pair_id]=pair_id_mapper
+            run_cc(i,event_id_mapper,event_id_1,event_id_2,event_p_st,event_s_st,target_folder)
 
 if __name__ == "__main__":
     """
@@ -41,6 +52,7 @@ if __name__ == "__main__":
     The input file is .pha file that is used for further hypoDD relocation process
     run: python phase_cross_correlation.py 
     """
+    cores = 4
     target_folder="./"
     cata = read_events(target_folder+"out.pha")
 
@@ -107,15 +119,22 @@ if __name__ == "__main__":
     
     event_pair_id={}
     event_pair_cc={}
+
+    #Below start to run parallel processing
+    pool = multiprocessing.Pool(processes = cores)
+    tasks = []
     for i,event_id_1 in enumerate(event_list):
-        print(f"Progress {i+1}/{len(cata_subset)}       ",end='\r')
-        for event_id_2 in event_list[(i+1):]:
-            dist,_,_ = gps2dist_azimuth(event_lat[event_id_1],event_lon[event_id_1],event_lat[event_id_2],event_lon[event_id_2])
-            if dist/1000 > max_sep:
-                continue
-            pair_id = event_id_1+event_id_2
-            pair_id_mapper = [event_id_1,event_id_2,event_id_mapper[event_id_1],event_id_mapper[event_id_2]]
-            event_pair_id[pair_id]=pair_id_mapper
-            run_cc(i,event_id_mapper,event_id_1,event_id_2,event_p_st,event_s_st,target_folder)
+        remain_event_list = event_list[(i+1):]
+        tasks.append((i,event_id_1,remain_event_list,event_lat,event_lon,event_pair_id,event_id_mapper,event_p_st,event_s_st,target_folder))
+    rs = pool.starmap_async(run_parallel,tasks,chunksize = 1)
+    pool.close()
+    while(True):
+        remaining = rs._number_left
+        print("Finished: {0}/{1}    ".format(len(tasks) - remaining,len(tasks)),end = '\r')
+        if(rs.ready()):
+            break
+        time.sleep(0.5)
+    pool.join()
     print("")
     print("Done!")
+    
