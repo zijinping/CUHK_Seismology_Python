@@ -49,6 +49,9 @@ matploblib
   - HypoDD
   - Glowclast
   
+- Earthquake Source Study
+  - [HASH - First-motion DC inversion](Earthquake_Source)
+  
 - Analysis
   - topodd
   - Abient Noise
