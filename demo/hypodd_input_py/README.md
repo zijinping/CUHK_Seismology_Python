@@ -29,7 +29,7 @@
     """
 ```
 ## Future update of the script
-- [ ] Local magnitude calculation
+- [ ] Local magnitude estimation
 - [ ] Support catalog plotting (Map, time series, B value)
 - [ ] **Parallel Processing**
 
