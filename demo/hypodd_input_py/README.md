@@ -28,6 +28,15 @@
     @author: jw
     """
 ```
+## Future update of the script
+- [ ] Local magnitude calculation
+- [ ] Support catalog plotting (Map, time series, B value)
+- [ ] **Parallel Processing**
+
+Possible future development: 
+- [ ] Convert to event sacfile
+- [ ] Use ASDF to speed up file I/O processes 
+
 
 ## Configure eqcorr_hypdd.py at line 252-296
 ```python
