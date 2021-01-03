@@ -1,5 +1,36 @@
-# Configure eqcorr_hypdd.py at line 252-296
+## Introduction of the script
+```python
+    """
+    Create input event.dat, phase pair (dt.ct) and waveform cross-correlation
+    (dt.cc) files for hypodd 
+        Processes:
+            0 Subset events
+            1 ph2dt
+            2.1 Generate event streams (Optional for prebuilt already)
+            2.2 Cross-correlation
+        Configure the script after __main__
+        Input: 
+            Catalog file (readable via obspy.read_events)
+                - Formats: .pha, .xml, etc...
+            Continuous Waveform
+                - Store in daily base (year/doy/*.[sac/mseed])
+        Output: (In the same directory of the script)
+            Event.dat   - Subsetted event with assigned id
+            dt.ct       - phase-pair
+            dt.cc       - cross-correlation pair
+            [ For intermediate step ]
+            event_stream.p      - temporal storage of event wf
+            event_stream_p.p    - temporal storage of P arrival wf
+            event_stream_s.p    - temporal storage of S arrival wf
+            event_id_mapper.p   - temporal storage of hypoDD id to catalog id mapper
+            hypodd_subset.p     - temporal storage of subseted obspy.catalog object
+    Created on Fri Nov  6 11:57:19 HKT 2020
+    @author: jw
+    """
+```
 
+## Configure eqcorr_hypdd.py at line 252-296
+```python
     if __name__ == "__main__":
         ######## Configurations ########
         hypodd_pha = read_events('/NAS2/Sichuan_data/phasenet/event_waveform/HYPODD2/weiyuan_subset.pha')
@@ -46,3 +77,4 @@
 
 
         ######## End of Configurations ########
+```
