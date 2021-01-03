@@ -2,6 +2,7 @@ import os
 import numpy as np
 from math import radians,cos,acos,sin,asin,sqrt,ceil,pi
 import obspy
+from obspy import Stream
 import glob
 import re
 from obspy import UTCDateTime
@@ -75,55 +76,36 @@ def spherical_dist(lon_1,lat_1,lon_2,lat_2):
     return a*180/pi
 
 
-def get_data(net,sta,chn,starttime,endtime,f_folder,time_zone_effect=0):
+def get_st(net,sta,starttime,endtime,f_folder,time_zone_effect=0):
     '''
-    Parameters list: net,sta,chn,starttime,endtime,f_path,time_zone,effect=0
+    Parameters list: net,sta,chn,starttime,endtime,f_path,time_zone_effect=0
     '''
-    new_s_time=starttime+time_zone_effect*60*60
-    new_e_time=endtime+time_zone_effect*60*60
-    new_s_day=new_s_time.day
-    new_e_day=new_e_time.day
+    starttime = starttime-time_zone_effect*60*60
+    endtime = endtime-time_zone_effect*60*60
     
-    if new_s_day == new_e_day:
-        year=str(new_s_time.year)
-        month=str(new_s_time.month).zfill(2)
-        day=str(new_s_time.day).zfill(2)
-        date=year+month+day
-        file1=glob.glob(f_folder+"/"+f"*{date}*"+net+"."+sta+f"*{chn}*.SAC")
-        if len(file1)==1:
-            st=obspy.read(file1[0])
-            st[0].trim(starttime=starttime,endtime=endtime)
-            if len(st[0].data)>0:
-                return True,st
-            else:
-                return False,""
+    inc_list=[]
+
+    for file in os.listdir(f_folder):
+        file_path = os.path.join(f_folder,file)
+        try:
+            st = obspy.read(file,headonly=True)
+        except:
+            continue
+        t1,t2 = st[0].stats.starttime,st[0].stats.endtime
+        if t2 < starttime or t1 > endtime:
+            continue
         else:
-            return False,""
+            inc_list.append(file_path)
+
+    #Read in data
+    st = Stream()
+    for path in inc_list:
+        st += obspy.read(path)
+    if len(st) == 0:
+        pass
     else:
-        #start date
-        year=str(new_s_time.year)
-        month=str(new_s_time.month).zfill(2)
-        day=str(new_s_time.day).zfill(2)
-        date=year+month+day
-        file1=glob.glob(f_folder+"/"+f"*{date}*"+net+"."+sta+f"*{chn}*.SAC")
-        #end date
-        year=str(new_e_time.year)
-        month=str(new_e_time.month).zfill(2)
-        day=str(new_e_time.day).zfill(2)
-        date=year+month+day
-        file2=glob.glob(f_folder+"/"+f"*{date}*"+net+"."+sta+f"*{chn}*.SAC")
-        #read data
-        if len(file1)==1 and len(file2)==1:
-            st=obspy.read(file1[0])
-            st+=obspy.read(file2[0])
-            st.merge(method=1,fill_value="interpolate")
-            st[0].trim(starttime=starttime,endtime=endtime)
-            if len(st[0].data)>0:
-                return True,st
-            else:
-                return False,""
-        else:
-            return False,""
+        st.trim(starttime,endtime)
+    return st
 
 def julday(year,month,day):
     ref_time=UTCDateTime(year,1,1)
@@ -167,7 +149,7 @@ def find_nearest(array,value):
     diff=array[idx]-value
     return idx,diff
 
-def str_2_time(name):
+def str2time(name):
     year = name[0:4]
     mo = name[4:6]
     dy = name[6:8]
@@ -177,7 +159,7 @@ def str_2_time(name):
     time = UTCDateTime(year+"-"+mo+"-"+dy+"T"+hr+":"+min+":"+sec[0:2]+"."+sec[2:])
     return time
 
-def time_2_str(time):
+def time2str(time):
     year = time.year
     month = time.month
     day = time.day
