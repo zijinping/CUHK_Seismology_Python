@@ -322,7 +322,7 @@ if __name__ == "__main__":
     print(filter_kwargs)
 
     # Generate event stream
-    if load_prebuilt = False:
+    if load_prebuilt == False:
         event_stream, event_stream_p, event_stream_s = get_event_stream(hypodd_subset,
                                                 starttime, endtime, waveform_dir,
                                                 time_before_arrival=before_arrival,
@@ -331,7 +331,7 @@ if __name__ == "__main__":
     
 
     ### load previous event_id_mapper, event_stream
-    if load_prebuilt = True:
+    if load_prebuilt == True:
         print('Load pickle dump')
         with open("hypodd_subset.p", "rb") as f_event_list:
             hypodd_subset = pickle.load(f_event_list)
