@@ -39,7 +39,7 @@ matploblib
 
 - Earthquake Detection
   - [PhaseNet](https://github.com/wayneweiqiang/PhaseNet.git)
-  - GeneralizedPhaseDetection
+  - [GeneralizedPhaseDetection](https://github.com/interseismic/generalized-phase-detection)
   - EQscancorr
   
 - Earthquake Phase Association and Location (& Relocation)
