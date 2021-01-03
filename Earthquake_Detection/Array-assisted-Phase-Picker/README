@@ -1,0 +1,11 @@
+This is a tutorial on the usage of AAPP
+
+Place the tutorial.ipynb and ./pic into the AAPP source code directory and 
+run via `jupyter notebook`
+
+The tutorial consists of two sections
+
+The first section introduce the data-mining machine learning model and
+simplified application. The second section includes the full processes of
+detecting earthquake arrivals and association as well as data format
+transformation and processing. 
