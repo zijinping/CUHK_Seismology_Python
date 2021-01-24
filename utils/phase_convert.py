@@ -120,7 +120,7 @@ def ncsn2pha(source_file,target_file):
                 
 
 
-def SC2phs(file_list=[],region_condition="-9/-9/-9/-9",mag_condition=-9,starttime=0,endtime=0):
+def sc2phs(file_list=[],region_condition="-9/-9/-9/-9",mag_condition=-9):
     #initiate
     lon_filt=True
     lat_filt=True
@@ -139,8 +139,6 @@ def SC2phs(file_list=[],region_condition="-9/-9/-9/-9",mag_condition=-9,starttim
         lat_max = float(lat_max)
     if mag_condition==-9:
         mag_filt = False
-    if starttime==0:
-        time_filt=False
     if file_list == []:
         for file in os.listdir("./"):
             if file[-4:]==".adj":
@@ -242,7 +240,7 @@ def SC2phs(file_list=[],region_condition="-9/-9/-9/-9",mag_condition=-9,starttim
             f.write(line+"\n")
     print("  ") #for window output
 
-def REAL2phs(input_file,phase_filt=8,region_filt=[0,0,0,0]):
+def real2phs(input_file,phase_filt=8,region_filt=[0,0,0,0]):
     """
     change from REAL association result to the file that could be read by hypo-inverse
     """

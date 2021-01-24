@@ -1,3 +1,11 @@
+# -*- coding: utf-8 -*-
+#-----------------------------------------------------------------------------
+#     Author: Hardy ZI
+#
+# Revision History
+#     2021-01-24 Initiate coding
+#-----------------------------------------------------------------------------
+
 import os
 import numpy as np
 from math import radians,cos,acos,sin,asin,sqrt,ceil,pi
@@ -10,7 +18,20 @@ import pandas as pd
 
 root_path="/NAS1/Sichuan_data/continous_waveform_sac/"
 
-def pha_subset(pha_file,lon_min,lon_max,lat_min,lat_max,filt=8):
+def pha_subset(pha_file,loc_filt,obs_filt=8):
+    '''
+    *.pha file is the input file for hypoDD ph2dt, this function subset the
+    pha file by the boundary condition and the minimum observation condition.
+    The output file is a file with ".st" suffix
+
+    Parameter
+    ---------
+    pha_file: Str. The input file.
+    loc_filt: array in format [lon_min, lon_max, lat_min, lat_max]
+    obs_filt: The minimum observation
+    '''
+
+    lon_min, lon_max, lat_min, lat_max = condition
     out_file = pha_file+".st"
     f = open(out_file,"w")
     f.close()
@@ -24,7 +45,7 @@ def pha_subset(pha_file,lon_min,lon_max,lat_min,lat_max,filt=8):
     record_list=[]
     for line in pha_content:
         if line[0]=="#":
-            if i>0 and len(record_list) > (filt+1):
+            if i>0 and len(record_list) > (obs_filt+1):
                 j=j+1
                 with open(out_file,"a") as f:
                     for record in record_list:
@@ -36,16 +57,16 @@ def pha_subset(pha_file,lon_min,lon_max,lat_min,lat_max,filt=8):
                 record_list = []
                 record_list.append(line)
             i=i+1
-            lat = re.split(" +",line)[7]
-            lon = re.split(" +",line)[8]
-            if float(lat)>lat_min and float(lat)<lat_max and float(lon)>lon_min and float(lon)<lon_max:
+            lat = float(re.split(" +",line)[7])
+            lon = float(re.split(" +",line)[8])
+            if lat>lat_min and lat<lat_max and lon>lon_min and lon<lon_max:
                 region_pass = True
             else:
                 region_pass = False
         else:
             if region_pass:
                 record_list.append(line)
-    if i>0 and len(record_list) > (filt+1):
+    if i>0 and len(record_list) > (obs_filt+1):
         j=j+1
         with open(out_file,"a") as f:
             for record in record_list:
@@ -56,6 +77,14 @@ def pha_subset(pha_file,lon_min,lon_max,lat_min,lat_max,filt=8):
      
 
 def read_sac_ref_time(tr):
+    """
+    Read and return reference time of a sac file in obspy.UTCDateTime format.
+
+    Parameter
+    --------
+    tr: Trace object of obspy
+    """
+
     nzyear = tr.stats.sac.nzyear
     nzjday = tr.stats.sac.nzjday
     nzhour = tr.stats.sac.nzhour
@@ -69,26 +98,27 @@ def read_sac_ref_time(tr):
 
 def spherical_dist(lon_1,lat_1,lon_2,lat_2):
     """
-    test
+    Calculate the distance of two postions and return distance in degree
     """
+
     lon_1,lat_1,lon_2,lat_2 = map(radians,[lon_1,lat_1,lon_2,lat_2])
     a=acos(sin(lat_1)*sin(lat_2)+cos(lat_1)*cos(lat_2)*cos(lon_2-lon_1))
     return a*180/pi
 
 
-def get_st(net,sta,starttime,endtime,f_folder,time_zone_effect=0):
+def get_st(net,sta,starttime,endtime,f_folder):
     '''
-    Parameters list: net,sta,chn,starttime,endtime,f_path,time_zone_effect=0
-    '''
-    starttime = starttime-time_zone_effect*60*60
-    endtime = endtime-time_zone_effect*60*60
+    Read and return waveform between starttime and endtime by specified
+    net and station in designated folder. It will merge waveform if include
+    more than one file.
     
+    The return is a obspy Stream object
+    '''
     inc_list=[]
-
     for file in os.listdir(f_folder):
         file_path = os.path.join(f_folder,file)
         try:
-            st = obspy.read(file,headonly=True)
+            st = obspy.read(file_path,headonly=True)
         except:
             continue
         t1,t2 = st[0].stats.starttime,st[0].stats.endtime
@@ -96,7 +126,6 @@ def get_st(net,sta,starttime,endtime,f_folder,time_zone_effect=0):
             continue
         else:
             inc_list.append(file_path)
-
     #Read in data
     st = Stream()
     for path in inc_list:
@@ -114,6 +143,10 @@ def julday(year,month,day):
     return int(julday)
 
 def month_day(year,julday):
+    '''
+    Transfer from julday to month and day.
+    Return year,month,day
+    '''
     #check if year is leap year
     leap=False
     if year%100==0:
@@ -141,7 +174,7 @@ def month_day(year,julday):
 
 def find_nearest(array,value):
     '''
-    find the nearest array value and index
+    find the nearest value. The return is index and diff
     '''
     if type(array) != np.ndarray:
         array=np.array(array)
@@ -149,17 +182,28 @@ def find_nearest(array,value):
     diff=array[idx]-value
     return idx,diff
 
-def str2time(name):
-    year = name[0:4]
-    mo = name[4:6]
-    dy = name[6:8]
-    hr = name[8:10]
-    min = name[10:12]
-    sec = name[12:]
+def str2time(string):
+    '''
+    Convert from "yyyymmddhhmmss**" to UTCDateTime and return
+    '''
+    year = string[0:4]
+    mo = string[4:6]
+    dy = string[6:8]
+    hr = string[8:10]
+    min = string[10:12]
+    sec = string[12:]
     time = UTCDateTime(year+"-"+mo+"-"+dy+"T"+hr+":"+min+":"+sec[0:2]+"."+sec[2:])
     return time
 
 def time2str(time):
+    '''
+    Convert from UTCDateTime to "yyyymmddhhmmss**" format and return
+
+    Parameter
+    ---------
+    time: UTCDateTime format
+    '''
+
     year = time.year
     month = time.month
     day = time.day
@@ -173,21 +217,66 @@ def time2str(time):
 
 def load_sum(sum_file):
     '''
-    out.sum file after hypoinverse run
+    *.sum file is the catalog summary file after Hyperinverse.
+    This function returns a dict:
+        -key is event id
+        -value is an array with below component:
+            --Str format event time "yyyymmddhhmmss**", also the event folder.
+            --event longitude
+            --event latitude
+            --event depth
+            --event magnitude
     '''
     sum_list = {}
     with open(sum_file,'r') as f:
         for line in f:
             eve_id=int(line[136:146])
             eve_folder = line[0:16]
-            sum_list[eve_id] = eve_folder
+            evla = int(line[16:18])+0.01*int(line[19:23])/60
+            evlo = int(line[23:26])+0.01*int(line[27:32])/60
+            evdp = int(line[31:36])*0.01
+            e_mag = int(line[123:126])*0.01
+            sum_list[eve_id] = [eve_folder,evlo,evla,evdp,e_mag]
     return sum_list
 
-def load_hypoDD(reloc_file="hypoDD.reloc",shift_hours=8):
+def load_sum_rev(sum_file):
+    '''
+    *.sum file is the catalog summary file after Hyperinverse.
+    This function returns a dict:
+        -key is event time in "yyyymmddhhmmss**" format, same with event folder
+        -value is an array with below component:
+            --event id
+            --event longitude
+            --event latitude
+            --event depth
+            --event magnitude
+    '''
+    sum_list = {}
+    with open(sum_file,'r') as f:
+        for line in f:
+            eve_id=int(line[136:146])
+            eve_folder = line[0:16]
+            evla = int(line[16:18])+0.01*int(line[19:23])/60
+            evlo = int(line[23:26])+0.01*int(line[27:32])/60
+            evdp = int(line[31:36])*0.01
+            e_mag = int(line[123:126])*0.01
+            sum_list[eve_folder] = [eve_id,evlo,evla,evdp,e_mag]
+    f.close()
+    return sum_list
+
+def load_hypoDD(reloc_file="hypoDD.reloc",shift_hour=0):
     """
+    load results of hypoDD
     return eve_list, df
+
+    Parameters
+    ----------
+    If the time of results is not in UTC time zone, a time shift is needed.
+    For example, Beijing time zone is 8 hours early than UTC time, 8 hours 
+    should be deducted so as to be consistent with UTC time.
     """
-    eve_list={}
+
+    eve_dict={}
     columns = ["ID","LAT","LON","DEPTH","X","Y","Z","EX","EY","EZ",\
            "YR","MO","DY","HR","MI","SC","MAG",\
            "NCCP","NCCS","NCTP","NCTS","RCC","RCT","CID"]
@@ -202,18 +291,30 @@ def load_hypoDD(reloc_file="hypoDD.reloc",shift_hours=8):
             eve_lat = data[1]
             eve_lon = data[2]
             eve_dep = data[3]
-            eve_time = UTCDateTime(int(data[10]),int(data[11]),int(data[12]),int(data[13]),int(data[14]),0) +float(data[15])- shift_hours*60*60
+            year = int(data[10])
+            month = int(data[11])
+            day = int(data[12])
+            hour = int(data[13])
+            minute = int(data[14])
+            seconds = float(data[15])
+            eve_time = UTCDateTime(year,month,day,hour,minute)+float(data[15])
+                        -shift_hour*60*60
             eve_time_str=str(eve_time)[0:-1]
             eve_mag =data[16]
-            eve_list[eve_time_str]=[float(eve_lon),float(eve_lat),float(eve_dep),float(eve_mag),int(eve_id)]
+            eve_dict[eve_time_str]=[float(eve_lon),float(eve_lat),float(eve_dep),float(eve_mag),int(eve_id)]
     f.close()
     df = pd.DataFrame(data=data_arr,columns=columns)
-    return eve_list,df
+    return eve_dict,df
 
 def hypoDD_mag_mapper(reloc_file,out_sum):
     """
-    get magnitude from out.sum file after hyperinverse
+    The output of hypoDD doesn't contain magnitude information.
+    This function reads magnitude information from *.sum file, which is the
+    output of hyperinverse and provide to hypoDD file.
+    
+    The results will cover the input reloc_fiie
     """
+
     #get the magnitude dictionary
     event_mag_list = {}
     with open(out_sum,"r") as f_obj:
@@ -240,12 +341,12 @@ def hypoDD_ref_days(reloc_file,ref_time,shift_hours=0):
     new_add=[]
     with open(reloc_file,"r") as f:
         for line in f:
-            year = int(line[103:107])
-            month = int(line[108:110])
-            day = int(line[111:113])
-            hour = int(line[114:116])
-            minute = int(line[117:119])
-            seconds = float(line[120:126])
+            year = int(re.split(" +",line)[11])
+            month = int(re.split(" +",line)[12])
+            day = int(re.split(" +",line)[13])
+            hour = int(re.split(" +",line)[14])
+            minute = int(re.split(" +",line)[15])
+            seconds = float(re.split(" +",line)[16])
             eve_time = UTCDateTime(year,month,day,hour,minute,0)+seconds - shift_hours*60*60
             days = (eve_time - ref_time)*1.0/(24*60*60)
             new_line=line[:-1]+" "+format(days,'4.2f')
