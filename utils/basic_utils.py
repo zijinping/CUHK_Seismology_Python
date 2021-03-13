@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #-----------------------------------------------------------------------------
-#     Author: Hardy ZI
+#     Author: Jinping ZI
 #
 # Revision History
 #     2021-01-24 Initiate coding
@@ -18,20 +18,20 @@ import pandas as pd
 
 root_path="/NAS1/Sichuan_data/continous_waveform_sac/"
 
-def pha_subset(pha_file,loc_filt,obs_filt=8):
-    '''
+def pha_subset(pha_file,loc_filter,obs_filter=8):
+    """
     *.pha file is the input file for hypoDD ph2dt, this function subset the
     pha file by the boundary condition and the minimum observation condition.
     The output file is a file with ".st" suffix
 
-    Parameter
-    ---------
+    Parameters
+    ----------
     pha_file: Str. The input file.
-    loc_filt: array in format [lon_min, lon_max, lat_min, lat_max]
-    obs_filt: The minimum observation
-    '''
+    loc_filter: array in format [lon_min, lon_max, lat_min, lat_max]
+    obs_filter: The minimum observation
+    """
 
-    lon_min, lon_max, lat_min, lat_max = condition
+    lon_min, lon_max, lat_min, lat_max = loc_filter
     out_file = pha_file+".st"
     f = open(out_file,"w")
     f.close()
@@ -45,7 +45,7 @@ def pha_subset(pha_file,loc_filt,obs_filt=8):
     record_list=[]
     for line in pha_content:
         if line[0]=="#":
-            if i>0 and len(record_list) > (obs_filt+1):
+            if i>0 and len(record_list) > (obs_filter+1):
                 j=j+1
                 with open(out_file,"a") as f:
                     for record in record_list:
@@ -66,7 +66,7 @@ def pha_subset(pha_file,loc_filt,obs_filt=8):
         else:
             if region_pass:
                 record_list.append(line)
-    if i>0 and len(record_list) > (obs_filt+1):
+    if i>0 and len(record_list) > (obs_filter+1):
         j=j+1
         with open(out_file,"a") as f:
             for record in record_list:
@@ -107,13 +107,13 @@ def spherical_dist(lon_1,lat_1,lon_2,lat_2):
 
 
 def get_st(net,sta,starttime,endtime,f_folder):
-    '''
+    """
     Read and return waveform between starttime and endtime by specified
     net and station in designated folder. It will merge waveform if include
     more than one file.
     
     The return is a obspy Stream object
-    '''
+    """
     inc_list=[]
     for file in os.listdir(f_folder):
         file_path = os.path.join(f_folder,file)
@@ -143,10 +143,10 @@ def julday(year,month,day):
     return int(julday)
 
 def month_day(year,julday):
-    '''
+    """
     Transfer from julday to month and day.
     Return year,month,day
-    '''
+    """
     #check if year is leap year
     leap=False
     if year%100==0:
@@ -173,9 +173,9 @@ def month_day(year,julday):
         return year,month,day
 
 def find_nearest(array,value):
-    '''
+    """
     find the nearest value. The return is index and diff
-    '''
+    """
     if type(array) != np.ndarray:
         array=np.array(array)
     idx=np.abs(array-value).argmin()
@@ -183,9 +183,9 @@ def find_nearest(array,value):
     return idx,diff
 
 def str2time(string):
-    '''
+    """
     Convert from "yyyymmddhhmmss**" to UTCDateTime and return
-    '''
+    """
     year = string[0:4]
     mo = string[4:6]
     dy = string[6:8]
@@ -196,13 +196,13 @@ def str2time(string):
     return time
 
 def time2str(time):
-    '''
+    """
     Convert from UTCDateTime to "yyyymmddhhmmss**" format and return
 
     Parameter
     ---------
     time: UTCDateTime format
-    '''
+    """
 
     year = time.year
     month = time.month
@@ -216,7 +216,7 @@ def time2str(time):
     return string
 
 def load_sum(sum_file):
-    '''
+    """
     *.sum file is the catalog summary file after Hyperinverse.
     This function returns a dict:
         -key is event id
@@ -226,7 +226,7 @@ def load_sum(sum_file):
             --event latitude
             --event depth
             --event magnitude
-    '''
+    """
     sum_list = {}
     with open(sum_file,'r') as f:
         for line in f:
@@ -240,7 +240,7 @@ def load_sum(sum_file):
     return sum_list
 
 def load_sum_rev(sum_file):
-    '''
+    """
     *.sum file is the catalog summary file after Hyperinverse.
     This function returns a dict:
         -key is event time in "yyyymmddhhmmss**" format, same with event folder
@@ -250,7 +250,8 @@ def load_sum_rev(sum_file):
             --event latitude
             --event depth
             --event magnitude
-    '''
+    """
+
     sum_list = {}
     with open(sum_file,'r') as f:
         for line in f:
@@ -297,8 +298,7 @@ def load_hypoDD(reloc_file="hypoDD.reloc",shift_hour=0):
             hour = int(data[13])
             minute = int(data[14])
             seconds = float(data[15])
-            eve_time = UTCDateTime(year,month,day,hour,minute)+float(data[15])
-                        -shift_hour*60*60
+            eve_time = UTCDateTime(year,month,day,hour,minute)+float(data[15])-shift_hour*60*60
             eve_time_str=str(eve_time)[0:-1]
             eve_mag =data[16]
             eve_dict[eve_time_str]=[float(eve_lon),float(eve_lat),float(eve_dep),float(eve_mag),int(eve_id)]
@@ -338,6 +338,19 @@ def hypoDD_mag_mapper(reloc_file,out_sum):
     f_obj.close()
 
 def hypoDD_ref_days(reloc_file,ref_time,shift_hours=0):
+    """
+    Add one column to the last of hypoDD files, calculate the length of time 
+    between the referece time and the event time in days.
+    The output is a file with the same title with reloc_file and add ".add" as
+    suffix.
+
+    Parameters
+    ----------
+     reloc_file: The hypoDD relocation file.
+       ref_time: Reference time in UTCDateTime format
+    shift_hours: Used when event time is not in UTC time zone
+    """
+
     new_add=[]
     with open(reloc_file,"r") as f:
         for line in f:
@@ -357,37 +370,3 @@ def hypoDD_ref_days(reloc_file,ref_time,shift_hours=0):
             f.write(line+"\n")
     f.close()
 
-def _region_subset(eve_dict,filt_condition="-999/-999/-999/-999/-999/-999"):
-    """
-    eve_dict is a dictionary,depth in km. Return a selected dict
-    """
-    #copy original dictionary to avoid action on original dictionary
-    filt_dict = eve_dict.copy()
-    #filt_condition
-    lon_min,lon_max,lat_min,lat_max,dep_min,dep_max=re.split("/",filt_condition)
-    if lon_min != "-999":
-        for eve in eve_dict:
-            if filt_dict[eve][0]<float(lon_min) or filt_dict[eve][0]>float(lon_max):
-                filt_dict.pop(eve)
-    tmp_dict = filt_dict.copy()
-    if lat_min != "-999":
-        for eve in tmp_dict:
-            if filt_dict[eve][1]<float(lat_min) or filt_dict[eve][1]>float(lat_max):
-                filt_dict.pop(eve)
-    tmp_dict = filt_dict.copy()
-    if dep_min != "-999":
-        for eve in tmp_dict:
-            if eve_dict[eve][2]<float(dep_min) or eve_dict[eve][2]>float(dep_max):
-                filt_dict.pop(eve)
-    return filt_dict
-    
-def _time_subset(eve_dict,starttime,endtime):
-    """
-    eve_dict is a dictionary, return a selected dict
-    """
-    filt_dict=eve_dict.copy()
-    for eve in eve_dict:
-        eve_time = UTCDateTime(eve)
-        if eve_time < starttime or eve_time > endtime:
-            filt_dict.pop(eve)
-    return filt_dict

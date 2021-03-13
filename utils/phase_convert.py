@@ -19,7 +19,7 @@ def ncsn2pha(source_file,target_file):
             continue
         if re.match("\d+",line[0:7]): # A event line
             date = line[0:8]
-            mo = line[5:6]
+            mo = line[4:6]
             dy = line[6:8]
             hr = line[8:10]
             min = line[10:12]
@@ -217,7 +217,12 @@ def sc2phs(file_list=[],region_condition="-9/-9/-9/-9",mag_condition=-9):
             p_type = line[17:19]
             p_hour = line[32:34]
             p_minute = line[35:37]
-            p_seconds = float(line[38:43])
+            #----For a bug in original data-----
+            try:
+                p_seconds = float(line[38:43])
+            except:
+                continue
+            #----for a bug in original data-----
             p_residual=line[45:50]
             if p_residual=="     ":
                 continue
@@ -238,7 +243,8 @@ def sc2phs(file_list=[],region_condition="-9/-9/-9/-9",mag_condition=-9):
     with open("out.phs","w") as f:
         for line in output_content:
             f.write(line+"\n")
-    print("  ") #for window output
+    print("") #for window output
+    print("")
 
 def real2phs(input_file,phase_filt=8,region_filt=[0,0,0,0]):
     """
