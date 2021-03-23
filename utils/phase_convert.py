@@ -1,11 +1,225 @@
 #!/usr/bin/env python
 # coding: utf-8
+# author: Hardy ZI
+# history:
+#		...
+#       2021-03-15 Add CN2fsdn function
+#
 
 import re
 from obspy import UTCDateTime
 import os
 import sys
 import time
+from utils.basic_utils import str2time
+from utils.basic_utils import load_hypoDD
+import time
+
+
+def dd2fdsn(in_file,subset=None):
+    '''
+    Convert the out.sum file into fdsn
+    format that could be read by zmap	
+    '''
+    T0 = time.time()
+    print("The start time is 0.")
+    if subset == None:
+        filt = False
+    else:
+        filt = True
+        [lon_min,lon_max,lat_min,lat_max] = subset
+    events = []
+    out_file = "dd.fdsn"
+    f=open(out_file,'w')
+    f.write("#EventID|Time|Latitude|Longitude|Depth/km|Author|Catalog|Contributor|ContributorID|MagType|Magnitude|MagAuthor|EventLocationName\n")
+    f.close()
+    eve_dict,df = load_hypoDD(reloc_file=in_file)
+    T1 = time.time()
+    print("%f seconds passed to load hypoDD file" %(T1-T0))
+    eve_list = list(eve_dict)
+    f = open(out_file,'a')
+    for eve in eve_list:
+        evid = eve_dict[eve][4]
+        e_time = eve
+        e_lon = eve_dict[eve][0]
+        e_lat = eve_dict[eve][1]
+        e_dep = eve_dict[eve][2]
+        e_mag = eve_dict[eve][3] 
+        if filt:
+            if e_lat>lat_max or e_lat<lat_min or e_lon>lon_max or e_lon<lon_min:
+                continue
+        mag_type = 'ML'
+        f.write('{:0>6d}'.format(evid)+"|")
+        f.write(str(e_time)+"|")
+        f.write(format(e_lat,'6.3f')+"|")
+        f.write(format(e_lon,'7.3f')+"|")
+        f.write(format(e_dep,'6.2f')+"|")
+        f.write("Hardy|")
+        f.write("SC|")
+        f.write("SC|")
+        f.write("01|")
+        f.write(mag_type+'|')
+        f.write(format(e_mag+0.01,'5.2f')+"|")
+        f.write("SC Agency|")
+        f.write("SC\n")
+    f.close()
+
+def sum2fdsn(in_file,subset=None):
+    '''
+    Convert the out.sum file into fdsn
+    format that could be read by zmap	
+    '''
+    if subset == None:
+        filt = False
+    else:
+        filt = True
+        [lon_min,lon_max,lat_min,lat_max] = subset
+    events = []
+    if isinstance(in_file,list):
+        for file in in_file: #input file, *.csv, without two header line
+            with open(file,'r',encoding='UTF-8') as f:
+                for line in f:
+                    events.append(line.rstrip())
+            f.close()
+    else:
+        with open(in_file,'r',encoding='UTF-8') as f:
+            for line in f:
+                events.append(line.rstrip())
+        f.close()
+    out_file = "sum.fdsn"
+    f=open(out_file,'w')
+    f.write("#EventID|Time|Latitude|Longitude|Depth/km|Author|Catalog|Contributor|ContributorID|MagType|Magnitude|MagAuthor|EventLocationName\n")
+    f.close()
+    f = open(out_file,'a')
+    for event in events:
+        evid = int(event[141:146])
+        e_time = str2time(event[:16])
+        e_lat = int(event[16:18])+int(event[19:23])/100.0/60.0
+        e_lon = int(event[23:26]) + int(event[27:31])/100.0/60.0
+        if filt:
+            if e_lat>lat_max or e_lat<lat_min or e_lon>lon_max or e_lon<lon_min:
+                continue
+        e_dep = int(event[31:36])/100.0
+        e_mag = int(event[123:126])/100.0
+        mag_type = 'ML'
+        f.write('{:0>6d}'.format(evid)+"|")
+        f.write(str(e_time)+"|")
+        f.write(format(e_lat,'6.3f')+"|")
+        f.write(format(e_lon,'7.3f')+"|")
+        f.write(format(e_dep,'6.2f')+"|")
+        f.write("Hardy|")
+        f.write("SC|")
+        f.write("SC|")
+        f.write("01|")
+        f.write(mag_type+'|')
+        f.write(format(e_mag+0.01,'5.2f')+"|")
+        f.write("SC Agency|")
+        f.write("SC\n")
+    f.close()
+
+
+def SC2fdsn(in_file,subset=None):
+    '''
+    Convert the event file from the SC catalog into fdsn
+    format that could be read by zmap	
+    '''
+    if subset == None:
+        filt = False
+    else:
+        filt = True
+        [lon_min,lon_max,lat_min,lat_max] = subset
+    events = []
+    if isinstance(in_file,list):
+        for file in in_file: #input file, *.csv, without two header line
+            with open(file,'r',encoding='UTF-8') as f:
+                for line in f:
+                    events.append(line.rstrip())
+            f.close()
+    else:
+        with open(in_file,'r',encoding='UTF-8') as f:
+            for line in f:
+                events.append(line.rstrip())
+        f.close()
+    out_file = "out.fdsn"
+    f=open(out_file,'w')
+    f.write("#EventID|Time|Latitude|Longitude|Depth/km|Author|Catalog|Contributor|ContributorID|MagType|Magnitude|MagAuthor|EventLocationName\n")
+    f.close()
+    f = open(out_file,'a')
+    for event in events:
+        evid = int(event[:5])
+        e_time = UTCDateTime(event[6:27])
+        e_lat = event[28:34]
+        e_lon = event[35:42]
+        if filt:
+            if float(e_lat)>lat_max or float(e_lat)<lat_min or float(e_lon)>lon_max or float(e_lon)<lon_min:
+                continue
+        e_dep = str(int(int(event[47:])/1000))
+        e_mag = float(event[43:46])+0.01
+        mag_type = 'ML'
+        f.write('{:0>6d}'.format(evid)+"|")
+        f.write(str(e_time)+"|")
+        f.write(e_lat+"|")
+        f.write(e_lon+"|")
+        f.write(e_dep+"|")
+        f.write("Hardy|")
+        f.write("SC|")
+        f.write("SC|")
+        f.write("01|")
+        f.write(mag_type+'|')
+        f.write(format(e_mag,'5.2f')+"|")
+        f.write("SC Agency|")
+        f.write("SC\n")
+    f.close()
+
+def CN2fdsn(in_file):
+    '''
+    Convert the event file from the China National Data Center into fdsn
+    format that could be read by zmap	
+    '''
+    events = []
+    if isinstance(in_file,list):
+        for file in in_file: #input file, *.csv, without two header line
+            with open(file,'r',encoding='UTF-8-sig') as f:
+                for line in f:
+                    events.append(line.rstrip())
+            f.close()
+    else:
+        with open(in_file,'r',encoding='UTF-8-sig') as f:
+            for line in f:
+                events.append(line.rstrip())
+        f.close()
+    out_file = "out.fdsn"
+    f=open(out_file,'w')
+    f.write("#EventID|Time|Latitude|Longitude|Depth/km|Author|Catalog|Contributor|ContributorID|MagType|Magnitude|MagAuthor|EventLocationName\n")
+    f.close()
+    evid = 0
+    f = open(out_file,'a')
+    for event in events:
+        evid = evid+1
+        e_time,e_lon,e_lat,e_dep,mag_type,e_mag,_,_ = re.split(",",event)
+        e_date,e_hm = re.split(" ",e_time)
+        e_year,e_month,e_day = re.split("/",e_date)
+        e_year=int(e_year)
+        e_month = int(e_month)
+        e_day = int(e_day)
+        e_hr,e_min = re.split(":",e_hm)
+        e_hr = int(e_hr)
+        e_min = int(e_min)
+        e_time = UTCDateTime(e_year,e_month,e_day,e_hr,e_min,0,0)
+        f.write('{:0>6d}'.format(evid)+"|")
+        f.write(str(e_time)+"|")
+        f.write(e_lat+"|")
+        f.write(e_lon+"|")
+        f.write(e_dep+"|")
+        f.write("Hardy|")
+        f.write("SC|")
+        f.write("SC|")
+        f.write("01|")
+        f.write(mag_type+'|')
+        f.write(format(float(e_mag)+0.01,'5.2f')+"|")
+        f.write("SC Agency|")
+        f.write("SC\n")
+    f.close()
 
 def ncsn2pha(source_file,target_file):
     input_content=[]
@@ -19,7 +233,7 @@ def ncsn2pha(source_file,target_file):
             continue
         if re.match("\d+",line[0:7]): # A event line
             date = line[0:8]
-            mo = line[4:6]
+            mo = line[5:6]
             dy = line[6:8]
             hr = line[8:10]
             min = line[10:12]
@@ -217,12 +431,7 @@ def sc2phs(file_list=[],region_condition="-9/-9/-9/-9",mag_condition=-9):
             p_type = line[17:19]
             p_hour = line[32:34]
             p_minute = line[35:37]
-            #----For a bug in original data-----
-            try:
-                p_seconds = float(line[38:43])
-            except:
-                continue
-            #----for a bug in original data-----
+            p_seconds = float(line[38:43])
             p_residual=line[45:50]
             if p_residual=="     ":
                 continue
@@ -243,8 +452,7 @@ def sc2phs(file_list=[],region_condition="-9/-9/-9/-9",mag_condition=-9):
     with open("out.phs","w") as f:
         for line in output_content:
             f.write(line+"\n")
-    print("") #for window output
-    print("")
+    print("  ") #for window output
 
 def real2phs(input_file,phase_filt=8,region_filt=[0,0,0,0]):
     """

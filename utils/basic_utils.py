@@ -268,7 +268,7 @@ def load_sum_rev(sum_file):
 def load_hypoDD(reloc_file="hypoDD.reloc",shift_hour=0):
     """
     load results of hypoDD
-    return eve_list, df
+    return eve_dict, df
 
     Parameters
     ----------
@@ -281,8 +281,12 @@ def load_hypoDD(reloc_file="hypoDD.reloc",shift_hour=0):
     columns = ["ID","LAT","LON","DEPTH","X","Y","Z","EX","EY","EZ",\
            "YR","MO","DY","HR","MI","SC","MAG",\
            "NCCP","NCCS","NCTP","NCTS","RCC","RCT","CID"]
+    number = 0
     with open(reloc_file,"r") as f:
         for line in f:
+            number = number+1
+            if number%10==0:
+                print("Current in process %d    "%number,end='\r')
             data=re.split(" +",line.rstrip())[1:]
             try:
                 data_arr = np.vstack((data_arr,data))
@@ -299,7 +303,7 @@ def load_hypoDD(reloc_file="hypoDD.reloc",shift_hour=0):
             minute = int(data[14])
             seconds = float(data[15])
             eve_time = UTCDateTime(year,month,day,hour,minute)+float(data[15])-shift_hour*60*60
-            eve_time_str=str(eve_time)[0:-1]
+            eve_time_str=str(eve_time)
             eve_mag =data[16]
             eve_dict[eve_time_str]=[float(eve_lon),float(eve_lat),float(eve_dep),float(eve_mag),int(eve_id)]
     f.close()
@@ -320,7 +324,7 @@ def hypoDD_mag_mapper(reloc_file,out_sum):
     with open(out_sum,"r") as f_obj:
         for line in f_obj:
             event_id = int(line[136:146])
-            event_mag = int(line[123:126])*0.01
+            event_mag = int(line[122:126])*0.01
             event_mag_list[event_id]=event_mag
     f_obj.close()
     #add in the magnitude
@@ -329,7 +333,7 @@ def hypoDD_mag_mapper(reloc_file,out_sum):
         for line in f_obj:
             dd_event_id = int(line[0:9])
             dd_event_mag = event_mag_list[dd_event_id]
-            new_line=line[:128]+format(dd_event_mag,'4.2f')+line[132:]
+            new_line=line[:128]+format(dd_event_mag,'5.2f')+line[132:]
             new_dd.append(new_line)
     f_obj.close()
     with open(reloc_file,"w") as f_obj:

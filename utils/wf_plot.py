@@ -75,8 +75,10 @@ def wf_dist_plot(st,length=10,color=None,label_sta=True,out_format="PNG",scaling
     plt.figure(figsize = (8,10))
     plt.xlim(0,max_time-min_time)
     plt.ylim(0,max_dist+3)
-    plt.xlabel("Seconds (s)")
-    plt.ylabel("Distance (km)")
+    plt.xticks(size=12)
+    plt.yticks(size=12)
+    plt.xlabel("Time (s)",fontdict={'size':16})
+    plt.ylabel("Distance (km)",fontdict={'size':16})
     #Plot trace by trace
     for tr in st:
         sta = tr.stats.station
@@ -116,8 +118,8 @@ def wf_dist_plot(st,length=10,color=None,label_sta=True,out_format="PNG",scaling
         except:
             pass
         if e_mag != -9:
-            plt.title(str(tr_ref_time)+f"_M{e_mag}")
+            plt.title(str(tr_ref_time)+f"_M{e_mag}",fontdict={'size':18})
         else:
-            plt.title(str(tr_ref_time))
+            plt.title(str(tr_ref_time),fontdict={'size':18})
     plt.savefig(f"{time2str(sac_ref_time)[:16]}.png",format=out_format)
     plt.close()
