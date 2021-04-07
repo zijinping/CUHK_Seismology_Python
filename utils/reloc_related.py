@@ -310,3 +310,25 @@ def hypoDD_hist(dd_file="hypoDD.reloc",ref_time=UTCDateTime(2019,3,1,0,0,0)):
     ax1.set_ylabel("event quantity")
     ax2.set_xlabel("date")
     plt.show()
+
+def event_sel(evid_list=[],event_dat="event.dat",event_sel="event.sel"):
+    '''
+    select events in the "event.dat" file and output them into
+    the "event.sel" file by the event ID list provided
+    '''
+    content = []
+    # Read in data
+    with open(event_dat,'r') as f:
+        for line in f:
+            line = line.rstrip()
+            evid = int(line[-8:])
+            if evid in evid_list:
+                content.append(line)
+    f.close()
+
+    # Output into target file
+    with open(event_sel,'w') as f:
+        for line in content:
+            f.write(line+"\n")
+    f.close()
+
