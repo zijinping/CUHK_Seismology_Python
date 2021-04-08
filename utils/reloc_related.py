@@ -332,3 +332,29 @@ def event_sel(evid_list=[],event_dat="event.dat",event_sel="event.sel"):
             f.write(line+"\n")
     f.close()
 
+def dtct_sel(evid_list,input_file):
+    """
+    Output clean dtct file with event id list provided
+    """
+    out_file = input_file+".sel"
+    out_cont = []
+    record_status = False # Set initiate value
+    with open(input_file,'r') as f:
+        for line in f:
+            if line[0]=="#": # pair line
+                print(re.split(" +",line.rstrip()))
+                _,ID1,ID2 = re.split(" +",line.rstrip())
+                ID1 = int(ID1)
+                ID2 = int(ID2)
+                if (ID1 in evid_list) and (ID2 in evid_list):
+                    record_status = True
+                    out_cont.append(line.rstrip())
+                else:
+                    record_status = False
+            elif record_status==True:
+                out_cont.append(line.rstrip())
+    f.close()
+
+    with open(out_file,'w') as f:
+        for line in out_cont:
+            f.write(line+"\n")

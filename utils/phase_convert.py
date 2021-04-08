@@ -12,7 +12,7 @@ import os
 import sys
 import time
 from utils.basic_utils import str2time
-from utils.basic_utils import load_hypoDD
+from utils.reloc_related import load_hypoDD
 import time
 
 
