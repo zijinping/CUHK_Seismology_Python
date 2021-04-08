@@ -40,7 +40,7 @@ def dd2fdsn(in_file,subset=None):
     f = open(out_file,'a')
     for eve in eve_list:
         evid = eve_dict[eve][4]
-        e_time = eve
+        e_time = str2time(eve)
         e_lon = eve_dict[eve][0]
         e_lat = eve_dict[eve][1]
         e_dep = eve_dict[eve][2]
