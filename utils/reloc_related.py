@@ -358,3 +358,59 @@ def dtct_sel(evid_list,input_file):
     with open(out_file,'w') as f:
         for line in out_cont:
             f.write(line+"\n")
+
+
+def hypoDD_rmdup(in_file="total_hypoDD.reloc"):
+    """
+    remove duplicated events and take mean values
+    """
+    count=0
+    evid_list = []
+    evid_mapper = {}
+    with open(in_file,'r') as f:
+        for line in f:
+            evid = int(line[0:11])
+            try:
+                evid_mapper[evid].append(line)
+                count += 1
+            except:
+                evid_mapper[evid]=[line]
+    f.close()
+
+    evid_list = list(evid_mapper)
+    evid_list.sort()
+
+    log_record = []
+    f=open(in_file+".rm",'w')
+    f.close()
+    for evid in evid_list:
+        if len(evid_mapper[evid])>1:
+            lon_list = []
+            lat_list = []
+            dep_list = []
+            for i in range(len(evid_mapper[evid])):
+                lon = float(evid_mapper[evid][i][22:32])
+                lon_list.append(lon)
+                lat = float(evid_mapper[evid][i][11:20])
+                lat_list.append(lat)
+                dep = float(evid_mapper[evid][i][36:42])
+                dep_list.append(dep)
+            lon_mean = np.mean(lon_list)
+            lat_mean = np.mean(lat_list)
+            dep_mean = np.mean(dep_list)
+            lon_str = format(lon_mean,'10.6f')
+            lat_str = format(lat_mean,'9.6f')
+            dep_str = format(dep_mean,'6.3f')
+            log_record.append([evid,lon_str,lat_str,dep_str])
+            firstr = evid_mapper[evid][0]  #Use the first record as template
+            outstr = firstr.replace(line[22:32],lon_str,1) #Replace lon
+            outstr = outstr.replace(line[11:20],lat_str,1) #Replace lat
+            outstr = outstr.replace(line[22:32],dep_str,1) #Replace dep
+            with open("total_hypoDD.reloc.rm",'a') as f:
+                f.write(outstr)
+            f.close()
+        else:
+            with open(in_file+".rm",'a') as f:
+                f.write(evid_mapper[evid][0])
+            f.close()
+    print(log_record)
