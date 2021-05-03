@@ -69,7 +69,6 @@ def scc_c(sta_pha,point1,point2):
         tmplt_stlo = sum_rev_dict[tmplt_folder][1]
         tmplt_stla = sum_rev_dict[tmplt_folder][2]
         for line in content[i+1:]:
-            print("line")
             e_path = re.split(" +",line)[0] # Format is "Path Arri_time 1"
             tar_folder = re.split("\/",e_path)[-2]
             tar_stlo = sum_rev_dict[tar_folder][1]
@@ -146,4 +145,10 @@ if __name__ == "__main__":
         os.makedirs(sta_pha)                 # Error happens when exists
         cores = int(mp.cpu_count()/2)        # Expand if you want
         mp_scc(sta_pha,cores)
+        finish_time = UTCDateTime.now()
+        with open("mp_scc.log",'a') as f:
+            f.write(str(finish_time)+" "+sta_pha+"\n")
+        f.close()
+
+            
 
