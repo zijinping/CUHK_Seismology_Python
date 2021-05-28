@@ -36,7 +36,8 @@ def wf_dist_plot(st,length=10,color=None,label_sta=True,out_format="PNG",scaling
     |        stla: tr.stats.sac.stla
     |        stlo: tr.stats.sac.stlo
     '''
-    
+    st.detrend("linear")
+    st.detrend("constant")
     try:
         e_mag = st[0].stats.sac.mag
     except:

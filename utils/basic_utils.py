@@ -65,7 +65,9 @@ def get_st(net,sta,starttime,endtime,f_folder):
         except:
             continue
         t1,t2 = st[0].stats.starttime,st[0].stats.endtime
-        if t2 < starttime or t1 > endtime:
+        if t2 < starttime or t1 > endtime \
+            or st[0].stats.network != net\
+            or st[0].stats.station != sta:
             continue
         else:
             inc_list.append(file_path)
