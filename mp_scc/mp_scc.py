@@ -151,7 +151,11 @@ if __name__ == "__main__":
     """
     Description:
     Scripts for multiprocessing SCC.
-    Usage: python mp_scc.py  --P_scc="scc -C0.6 -M3 -W-0.5/1/0.75"
+    Usage: python mp_scc.py  
+    Default parser:
+        --af_folder="./"
+        --P_scc="scc -C0.6 -M3 -W-0.5/1/0.75
+        --S_scc="scc -C0.6 -M3 -W-1/3/2"
     The program recognize "*.arr" as arrival files
     """
     args = read_args()
