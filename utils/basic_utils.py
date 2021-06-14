@@ -126,37 +126,3 @@ def find_nearest(array,value):
     idx=np.abs(array-value).argmin()
     diff=array[idx]-value
     return idx,diff
-
-def str2time(string):
-    """
-    Convert from "yyyymmddhhmmss**" to UTCDateTime and return
-    """
-    year = string[0:4]
-    mo = string[4:6]
-    dy = string[6:8]
-    hr = string[8:10]
-    min = string[10:12]
-    sec = string[12:18]
-    time = UTCDateTime(year+"-"+mo+"-"+dy+"T"+hr+":"+min+":"+sec[0:2]+"."+sec[2:])
-    return time
-
-def time2str(time):
-    """
-    Convert from UTCDateTime to "yyyymmddhhmmss**" format and return
-
-    Parameter
-    ---------
-    time: UTCDateTime format
-    """
-
-    year = time.year
-    month = time.month
-    day = time.day
-    hour = time.hour
-    minute = time.minute
-    second = time.second
-    m_second = time.microsecond
-    string = str(year)+str(month).zfill(2)+str(day).zfill(2)+str(hour).zfill(2)+\
-            str(minute).zfill(2)+str(second).zfill(2)+str(m_second).zfill(6)
-    return string
-
