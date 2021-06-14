@@ -3,38 +3,56 @@
 #-----------------------------------------------------------------------------
 #     Author: Jinping ZI
 #     History: 
-#             2021-2-26 Initiate coding
+#             2021-02-26 Initiate coding
+#             2021-06-14 Update parser
 #-----------------------------------------------------------------------------
 
 import os
 import subprocess
 import multiprocessing as mp
+import argparse
 import time
 import re
+import warnings
+import shutil
 from obspy import UTCDateTime
-from utils.basic_utils import str2time,time2str
+
+def read_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--af_folder",
+                        default="./",
+                        help="The arrival files folder")
+    parser.add_argument("--P_scc",
+                        default="scc -C0.6 -M3 -W-0.5/1/0.75",
+                        help="Command for P arrival cross-correlation")
+    parser.add_argument("--S_scc",
+                        default="scc -C0.6 -M3 -W-1/3/2",
+                        help="Command for S arrival cross-correlation")
+    parser.add_argument("--cpu_cores",
+                        default=0,
+                        type=int,
+                        help="0 indicates using all cores")
+    args = parser.parse_args()
+    return args
 
 def load_sum_rev(sum_file):
     '''
     Load in information from out.sum file after hypoinverse run
     format: {eve_folder:eve_id,evlo,evla}
     '''
-    sum_list = {}
+    sum_dict = {}
     with open(sum_file,'r') as f:
         for line in f:
             eve_id=int(line[136:146])
-            _e_time = line[0:16]
-            e_time = str2time(_e_time)
-            e_time = e_time - 8*60*60
-            eve_folder = time2str(e_time)[:16]
+            eve_folder = line[:16]
             evla = int(line[16:18])+0.01*int(line[19:23])/60
             evlo = int(line[23:26])+0.01*int(line[27:32])/60
-            sum_list[eve_folder] = [eve_id,evlo,evla]
+            sum_dict[eve_folder] = [eve_id,evlo,evla]
     f.close()
-    return sum_list
+    return sum_dict
 
 
-def scc_c(sta_pha,point1,point2):
+def scc_c(args,sta_pha,point1,point2):
     '''
     SCC written by C is used here because C runs much faster than python. 
     Even though python SCC script has been developed.
@@ -45,7 +63,7 @@ def scc_c(sta_pha,point1,point2):
     f = open(xc_file,'w')                  # Initiate result file
     f.close()
 
-    # Here we re-read arr files rather than deliver parameter from mp_scc()
+    # Here we re-read arr files rather than deliver parameters from mp_scc()
     content= []
     with open(f"{sta_pha}.arr","r")as f:
         for line in f:
@@ -53,14 +71,14 @@ def scc_c(sta_pha,point1,point2):
             content.append(line)
     f.close()
     if sta_pha[-1]=="S":
-        cmd ="scc -C0.6 -M3 -W-1/3/2 \n"
+        cmd =args.S_scc+"\n"
         #-C0.6:    threshold
         #-M3:      3 components
         #-W-1/3/2: waveform range [-1,3] from arrival time. 
         #          expand sliding range 2s 
         # Run ./SCC in command line to read usage guideline
     if sta_pha[-1]=="P":
-        cmd ="scc -C0.6 -M3 -W-0.5/1/0.75 \n"
+        cmd = args.P_scc+"\n"
         # P segment should be short than S waveform
     for i in range(point1,point2):
         s = content[i]+"\n"
@@ -83,7 +101,7 @@ def scc_c(sta_pha,point1,point2):
                 f.write(content[i]+" "+line+"\n")
         f.close()
 
-def mp_scc(sta_pha,cores):
+def mp_scc(args,sta_pha):
     '''
     The calculation proess is:
         -- The first waveform cross-correlate with left n-1 waveforms
@@ -114,9 +132,11 @@ def mp_scc(sta_pha,cores):
     for i in range(len(index_list)-1):
         point1 = index_list[i]
         point2 = index_list[i+1]
-        tasks.append((sta_pha,point1,point2))
-    
+        tasks.append((args,sta_pha,point1,point2))
     # Multiprocessing
+    cores = args.cpu_cores
+    if cores==0:
+        cores = mp.cpu_count()
     pool = mp.Pool(processes=cores)
     rs = pool.starmap_async(scc_c,tasks,chunksize=1)
     pool.close()
@@ -131,20 +151,31 @@ if __name__ == "__main__":
     """
     Description:
     Scripts for multiprocessing SCC.
-    Usage: python mp_scc.py
+    Usage: python mp_scc.py  --P_scc="scc -C0.6 -M3 -W-0.5/1/0.75"
     The program recognize "*.arr" as arrival files
     """
-    af_folder = "./"                         # Arrive files folder
+    args = read_args()
     sta_pha_list = []                        # List for sta_pha
-    for file in os.listdir(af_folder):
+    for file in os.listdir(args.af_folder):
         if file[-3:]!="arr":                 # Pass non-arrival files
             continue
         sta_pha = re.split("\.",file)[0]     # E.g. sta_pha = GS010_P
         sta_pha_list.append(sta_pha)
     for sta_pha in sta_pha_list:
+        if os.path.exists(sta_pha):
+            status = 0
+            while status != 1:
+                in_parameter = input("The folder has existed, remove it? Y/N\n")
+                if in_parameter=="Y":
+                    shutil.rmtree(sta_pha)
+                    status = 1
+                elif in_parameter=="N":
+                    status = 1
+                    os._exit()
+                else:
+                    print("Please select Y/N...")
         os.makedirs(sta_pha)                 # Error happens when exists
-        cores = int(mp.cpu_count()/2)        # Expand if you want
-        mp_scc(sta_pha,cores)
+        mp_scc(args,sta_pha)
         finish_time = UTCDateTime.now()
         with open("mp_scc.log",'a') as f:
             f.write(str(finish_time)+" "+sta_pha+"\n")
