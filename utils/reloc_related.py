@@ -15,7 +15,6 @@ import glob
 import re
 from obspy import UTCDateTime
 import pandas as pd
-from utils.basic_utils import str2time,time2str
 import matplotlib.pyplot as plt
 
 def pha_subset(pha_file,loc_filter,obs_filter=8):
@@ -164,7 +163,7 @@ def load_hypoDD(reloc_file="hypoDD.reloc",shift_hour=0):
             minute = int(data[14])
             seconds = float(data[15])
             eve_time = UTCDateTime(year,month,day,hour,minute)+seconds-shift_hour*60*60
-            eve_time_str=time2str(eve_time)
+            eve_time_str=eve_time.strftime("%Y%m%d%H%M%S%f")[:16]
             eve_mag =data[16]
             eve_dict[eve_time_str]=[float(eve_lon),float(eve_lat),float(eve_dep),float(eve_mag),int(eve_id)]
     f.close()
@@ -224,8 +223,6 @@ def hypoDD_ref_days(reloc_file,ref_time,shift_hours=0):
             day = int(re.split(" +",line)[13])
             hour = int(re.split(" +",line)[14])
             minute = int(re.split(" +",line)[15])
-            seconds = float(re.split(" +",line)[16])
-            eve_time = UTCDateTime(year,month,day,hour,minute,0)+seconds - shift_hours*60*60
             days = (eve_time - ref_time)*1.0/(24*60*60)
             new_line=line[:-1]+" "+format(days,'4.2f')
             new_add.append(new_line)
@@ -237,40 +234,65 @@ def hypoDD_ref_days(reloc_file,ref_time,shift_hours=0):
 
 def hypoDD_hist(dd_file="hypoDD.reloc",ref_time=UTCDateTime(2019,3,1,0,0,0)):
     """
-    Plot hypoDD results in a histogram plot.
-    
+    Plot events by day-quantity in a histogram plot.
     Parameters:
-    dd_file: Path of hypoDD file
-    ref_time: Reference time for plot
+        -dd_file: Path of hypoDD file
+        -ref_time: Reference time for plot
     """
-    eve_list = list(eve_dict)
     ref_list = []
     time_list = []
     number=0
-    with open(dd_file,"r") as f:
-        for line in f:
-            number = number+1
-            if number%10==0:
-                print("Current in process %d    "%number,end='\r')
-            data=re.split(" +",line.rstrip())[1:]
-            try:
-                data_arr = np.vstack((data_arr,data))
-            except:
-                data_arr = np.array(data)
-            eve_id = data[0]
-            eve_lat = data[1]
-            eve_lon = data[2]
-            eve_dep = data[3]
-            year = int(data[10])
-            month = int(data[11])
-            day = int(data[12])
-            hour = int(data[13])
-            minute = int(data[14])
-            seconds = float(data[15])
-            eve_time = UTCDateTime(year,month,day,hour,minute)+seconds
-            time_list.append(eve_time)
-            gap_time = eve_time - ref_time
-            ref_list.append((eve_time-ref_time)/(60*60*24))
+    if isinstance(dd_file,str):
+        with open(dd_file,"r") as f:
+            for line in f:
+                number = number+1
+                if number%10==0:
+                    print("Current in process %d    "%number,end='\r')
+                data=re.split(" +",line.rstrip())[1:]
+                try:
+                    data_arr = np.vstack((data_arr,data))
+                except:
+                    data_arr = np.array(data)
+                eve_id = data[0]
+                eve_lat = data[1]
+                eve_lon = data[2]
+                eve_dep = data[3]
+                year = int(data[10])
+                month = int(data[11])
+                day = int(data[12])
+                hour = int(data[13])
+                minute = int(data[14])
+                seconds = float(data[15])
+                eve_time = UTCDateTime(year,month,day,hour,minute)+seconds
+                time_list.append(eve_time)
+                gap_time = eve_time - ref_time
+                ref_list.append((eve_time-ref_time)/(60*60*24))
+    elif isinstance(dd_file,list)and len(dd_file)!=0:
+        for dd_f in dd_file:
+            with open(dd_f,"r") as f:
+                for line in f:
+                    number = number+1
+                    if number%10==0:
+                        print("Current in process %d    "%number,end='\r')
+                    data=re.split(" +",line.rstrip())[1:]
+                    try:
+                        data_arr = np.vstack((data_arr,data))
+                    except:
+                        data_arr = np.array(data)
+                    eve_id = data[0]
+                    eve_lat = data[1]
+                    eve_lon = data[2]
+                    eve_dep = data[3]
+                    year = int(data[10])
+                    month = int(data[11])
+                    day = int(data[12])
+                    hour = int(data[13])
+                    minute = int(data[14])
+                    seconds = float(data[15])
+                    eve_time = UTCDateTime(year,month,day,hour,minute)+seconds
+                    time_list.append(eve_time)
+                    gap_time = eve_time - ref_time
+                    ref_list.append((eve_time-ref_time)/(60*60*24))
     min_day=floor(min(ref_list))
     max_day=ceil(max(ref_list))
     bins = np.linspace(min_day,max_day,max_day-min_day+1)
