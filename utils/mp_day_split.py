@@ -68,7 +68,7 @@ def time_file_list(i_path,folder):
     return t_point_list,data_path_list
 
 
-def day_split(i_path,o_path,folder,sta_dict,format):
+def day_split(i_path,o_path,folder,sta_dict,format,shift_hour=0):
         # get the ordered time list and corresponding file path 
         t_point_list,data_path_list = time_file_list(i_path,folder)
         
@@ -95,7 +95,7 @@ def day_split(i_path,o_path,folder,sta_dict,format):
             f_month=t_point_list[0].month
             f_day=t_point_list[0].day
             #the second point should be the start time of the second day
-            trim_node=UTCDateTime(f_year,f_month,f_day+1)
+            trim_node=UTCDateTime(f_year,f_month,f_day+1)+shift_hour
             #if the second point is less than the total end time, add it into list and move to next day
             while trim_node < tte:
                 trim_point_list.append(trim_node)
@@ -139,7 +139,7 @@ def day_split(i_path,o_path,folder,sta_dict,format):
             pos_write(o_folder,sta_dict)
             
             
-def mp_day_split(i_path,o_path,sta_file,format="SAC"):
+def mp_day_split(i_path,o_path,sta_file,format="SAC",shift_hour=0):
     '''
     This function reads in the data from QS5A devices and split them by days
     Parameters:
@@ -147,6 +147,7 @@ def mp_day_split(i_path,o_path,sta_file,format="SAC"):
     o_path: output path. output_path/sta_name/seismic_files.
     sta_file: station files containing the longitude and latitude information
     format: "SAC" or "MSEED"
+    shift_hour: Shift the trimming time with reference to hour 0. The main purpose is the adjust time zone issue
     '''
     # First load in the station file
     print("# Loading station files ...")
@@ -195,7 +196,7 @@ def mp_day_split(i_path,o_path,sta_file,format="SAC"):
         cores = int(mp.cpu_count()/2)
         tasks = []
         for folder in folder_list:
-            tasks.append([i_path,o_path,folder,sta_dict,format])
+            tasks.append([i_path,o_path,folder,sta_dict,format,shift_hour])
         pool = mp.Pool(processes=cores)
         rs = pool.starmap_async(day_split,tasks,chunksize=1)
         pool.close()
@@ -207,13 +208,16 @@ def mp_day_split(i_path,o_path,sta_file,format="SAC"):
             time.sleep(0.5)
 
 if __name__=="__main__":
+    """
+    This function reads in the data from QS5A devices and split them by days
+    Parameters:
+    i_path: base folder containing all the source files. base_folder/sta_folder/seismic_files
+    o_path: output path. output_path/sta_name/seismic_files.
+    sta_file: station files containing the longitude and latitude information
+    """
     i_path = "/home/zijinping/Desktop/testtest/raw_data"
     o_path = '/home/zijinping/Desktop/testtest/day_data'
     sta_file = '/home/zijinping/Desktop/zijinping/resources/stations/sta_sum_20201121.txt'
+    
     mp_day_split(i_path,o_path,sta_file)
-
-
-
-
-
 
