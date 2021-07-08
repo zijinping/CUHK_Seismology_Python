@@ -1,0 +1,1 @@
+The program will not process files couldn't be read by obspy
