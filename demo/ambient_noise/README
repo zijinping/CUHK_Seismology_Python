@@ -1,0 +1,2 @@
+Run "python days_mp_corr.py --stations GS010/GS030 --day_range 131/131"
+Run "python days_mp_corr.py -h" for help

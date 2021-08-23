@@ -6,7 +6,7 @@
 #----------------------------------------------------------------------
 from obspy import read
 import matplotlib.pyplot as plt
-from utils.basic_utils import read_sac_ref_time,spherical_dist,time2str
+from utils.basic_utils import read_sac_ref_time,spherical_dist
 import numpy as np
 
 def wf_dist_plot(st,length=10,color=None,label_sta=True,out_format="PNG",scaling_factor=2):
@@ -122,5 +122,5 @@ def wf_dist_plot(st,length=10,color=None,label_sta=True,out_format="PNG",scaling
             plt.title(str(tr_ref_time)+f"_M{e_mag}",fontdict={'size':18})
         else:
             plt.title(str(tr_ref_time),fontdict={'size':18})
-    plt.savefig(f"{time2str(sac_ref_time)[:16]}.png",format=out_format)
+    plt.savefig(f"{sac_ref_time.strftime('%Y%m%d%H%M%S')}.png",format=out_format)
     plt.close()

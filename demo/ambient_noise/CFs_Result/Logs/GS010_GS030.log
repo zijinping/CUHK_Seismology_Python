@@ -1,0 +1,9 @@
+2021-08-23 14:33:44,357-days_mp_corr.py-INFO: station pair = GS010 GS030
+2021-08-23 14:33:44,646-days_mp_corr.py-INFO: load data sccess: 2020 131 GS010 GS030
+2021-08-23 14:33:44,646-days_mp_corr.py-INFO: Now processing: 2020 131 ......
+2021-08-23 14:33:44,646-days_mp_corr.py-INFO: resample data of GS010
+2021-08-23 14:33:44,914-days_mp_corr.py-INFO: resample before and after: 8640001 4320001
+2021-08-23 14:33:44,935-days_mp_corr.py-INFO: resampled frequency is 50.0
+2021-08-23 14:33:44,935-days_mp_corr.py-INFO: resample data of GS030
+2021-08-23 14:33:45,201-days_mp_corr.py-INFO: resample before and after: 8640001 4320001
+2021-08-23 14:33:59,405-days_mp_corr.py-INFO: complete 2020 131 GS010 GS030

@@ -11,14 +11,133 @@ from obspy import UTCDateTime
 import os
 import sys
 import time
-from utils.basic_utils import str2time
-from utils.reloc_related import load_hypoDD
+from utils.reloc_related import load_DD
 import time
+from utils.basic_utils import WY_para
 
+def sta2vel(net_list=[],lon_lat=[]):
+    '''
+    Convert station file into velest format
+    Velest only accept station name with 4 characters
+    lon_lat: [lon_min,lon_max,lat_min,lat_max]
+    '''
+    lon_min = lon_lat[0]
+    lon_max = lon_lat[1]
+    lat_min = lon_lat[2]
+    lat_max = lon_lat[3]
+    ICC_count=0
+    output = "station.vel"
+    f = open(output,'w')
+    f.write("(a4,f7.4,a1,1x,f8.4,a1,1x,i4,1x,i1,1x,i3,1x,f5.2,2x,f5.2)\n")
+    wy_para = WY_para()
+    sta_locs = wy_para.dict['sta_locs']
+    for sta_loc in sta_locs:
+        sta_lon,sta_lat,sta_ele,net,sta,_ = sta_loc
+        if net not in net_list:
+            continue
+        if sta_lon<lon_min or sta_lon>lon_max:
+            continue
+        if sta_lat<lat_min or sta_lat>lat_max:
+            continue
+        ICC_count+=1
+        if len(sta)==5:
+            f.write(sta[1:]+format(sta_lat,'7.4f')+"N "+format(sta_lon,'8.4f')\
+                    +"E    0 1 "+format(ICC_count,'3d')+"  0.00   0.00   1\n")
+        else:
+            f.write(format(sta,'4s')+format(sta_lat,'7.4f')+"N "+format(sta_lon,'8.4f')\
+                    +"E    0 1 "+format(ICC_count,'3d')+"  0.00   0.00   1\n")
+    f.write("                                                  ")
+    
+def phs2vel(phs_file,mag_threshold=-9):
+    count = 0
+    cont = []    # Save the content of the phase file
+    out_dict = {}     # output content
+    with open(phs_file,'r') as f:
+        for line in f:
+            cont.append(line.rstrip())
+    f.close()
+
+    for line in cont:
+        if re.match("\d+",line[:6]):    # line start with digit is event line
+            e_label = line[:16]
+            e_time = UTCDateTime.strptime(line[:12],'%Y%m%d%H%M')+int(line[12:16])*0.01
+            e_lat = int(line[16:18])+int(line[19:23])*0.01/60
+            e_lon = int(line[23:26])+int(line[27:31])*0.01/60
+            e_dep = int(line[31:36])*0.01
+            record_status = True
+            try:
+                e_mag = int(line[123:126])*0.01
+            except:
+                e_mag = 0
+            if e_mag<mag_threshold:
+                record_status=False
+            if record_status == False:
+                continue
+            count += 1
+            print(line)
+            out_dict[e_label] = {}    # dict with event line str as key
+            out_dict[e_label]["e_time"]=e_time
+            out_dict[e_label]["e_lat"]=e_lat
+            out_dict[e_label]["e_lon"]=e_lon
+            out_dict[e_label]["e_dep"]=e_dep
+            out_dict[e_label]["e_mag"]=e_mag
+            out_dict[e_label]["phase"]=[]   # array to store phases
+        elif line[:6]=='      ':        # The last line indicate the evid
+            if record_status==False:
+                continue
+            out_dict[e_label]["evid"]=int(line[63:72])
+        else:                           # Station phase line
+            if record_status==False:
+                continue
+            sta = line[:5].split()
+            sta = sta[0]
+            if len(sta)==5:
+                sta = sta[1:5]          # Velest only accept 4 station character
+            net = line[5:7]
+            if line[14] == "P":
+                pha = "P"
+                phs_time = UTCDateTime.strptime(line[17:29],"%Y%m%d%H%M")+\
+                            int(line[30:34])*0.01
+                diff_time = phs_time - e_time
+            elif line[47] == "S":
+                pha = "S"
+                phs_time = UTCDateTime.strptime(line[17:29],"%Y%m%d%H%M")+\
+                            int(line[42:46])*0.01
+                diff_time = phs_time - e_time
+            pha_record = sta.ljust(4," ")+pha+"1"+format(diff_time,'6.2f')
+            out_dict[e_label]["phase"].append(pha_record)
+    print(f"# Total {count} events!")
+    cnv_file = phs_file+".cnv"
+    f = open(cnv_file,'w')
+    for key in out_dict.keys():      # Loop for each event
+        e_lat = out_dict[key]["e_lat"]
+        e_lon = out_dict[key]["e_lon"]
+        e_dep = out_dict[key]["e_dep"]
+        e_mag = out_dict[key]["e_mag"]
+        phases = out_dict[key]["phase"]
+        part1 = key[2:8]+" "+key[8:12]+" "+key[12:14]+"."+key[14:16]+" "
+        part2 = format(e_lat,"7.4f")+"N"+" "+format(e_lon,"8.4f")+"E"+" "
+        part3 = format(e_dep,"7.2f")+"  "+format(e_mag,"5.2f")
+        
+        f.write(part1+part2+part3)
+        i = 0
+        for phase in phases:
+            if i%6==0:
+                f.write("\n")
+            f.write(phase)
+            i=i+1
+        tmp = i%6
+        if tmp>0:
+            f.write((6-tmp)*12*" "+"\n") # add space to fill line
+        elif tmp==0:
+            f.write("\n")
+        f.write("    \n")
+    f.write("9999")
+    f.close()
 
 def dd2fdsn(in_file,subset=None):
     '''
-    Convert the out.sum file into fdsn
+    Convert the hypoDD reloc file into fdsn
     format that could be read by zmap	
     '''
     T0 = time.time()
@@ -40,7 +159,7 @@ def dd2fdsn(in_file,subset=None):
     f = open(out_file,'a')
     for eve in eve_list:
         evid = eve_dict[eve][4]
-        e_time = str2time(eve)
+        e_time = UTCDateTime.strptime(eve,"%Y%m%d%H%M%s%f")
         e_lon = eve_dict[eve][0]
         e_lat = eve_dict[eve][1]
         e_dep = eve_dict[eve][2]
@@ -93,7 +212,7 @@ def sum2fdsn(in_file,subset=None):
     f = open(out_file,'a')
     for event in events:
         evid = int(event[141:146])
-        e_time = str2time(event[:16])
+        e_time = UTCDateTime(event[:16],"%Y%m%d%H%M%S%f")
         e_lat = int(event[16:18])+int(event[19:23])/100.0/60.0
         e_lon = int(event[23:26]) + int(event[27:31])/100.0/60.0
         if filt:
@@ -216,6 +335,46 @@ def CN2fdsn(in_file):
         f.write("SC|")
         f.write("01|")
         f.write(mag_type+'|')
+        f.write(format(float(e_mag)+0.01,'5.2f')+"|")
+        f.write("SC Agency|")
+        f.write("SC\n")
+    f.close()
+
+def IRIS2fdsn(events):
+    '''
+    Convert the event file from the python client into fdsn
+    format that could be read by zmap	
+    '''
+    out_file = "out.fdsn"
+    f=open(out_file,'w')
+    f.write("#EventID|Time|Latitude|Longitude|Depth/km|Author|Catalog|Contributor|ContributorID|MagType|Magnitude|MagAuthor|EventLocationName\n")
+    f.close()
+    evid = 0
+    f = open(out_file,'a')
+    for event in events:
+        evid = evid+1
+        e_time = event["origins"][0]["time"]
+        e_lon = event["origins"][0]["longitude"]
+        e_lat = event["origins"][0]["latitude"]
+        e_mag = event["magnitudes"][0]["mag"]
+        try:
+            e_dep = event["origins"][0]["depth"]/1000
+        except:
+            e_dep = 0
+        try:
+            mag_type = event["magnitudes"][0]["magnitude_type"]
+        except:
+            mag_type = None
+        f.write('{:0>6d}'.format(evid)+"|")
+        f.write(str(e_time)+"|")
+        f.write(str(e_lat)+"|")
+        f.write(str(e_lon)+"|")
+        f.write(str(e_dep)+"|")
+        f.write("Hardy|")
+        f.write("IRIS|")
+        f.write("IRIS|")
+        f.write("01|")
+        f.write(str(mag_type)+'|')
         f.write(format(float(e_mag)+0.01,'5.2f')+"|")
         f.write("SC Agency|")
         f.write("SC\n")
@@ -419,8 +578,8 @@ def sc2phs(file_list=[],region_condition="-9/-9/-9/-9",mag_condition=-9):
                 event_id+=1
                 print("Process event     {0}    ".format(event_id),end='\r')
                 part1 = e_year+e_month+e_day+e_hour+e_minute+e_second_int+e_second_left+'0'
-                part2 = str(int(e_lat))+" "+str(int((e_lat-int(e_lat))*60*100))
-                part3 = str(int(e_lon))+"E"+str(int((e_lon-int(e_lon))*60*100))
+                part2 = str(int(e_lat))+" "+str(int((e_lat-int(e_lat))*60*100)).zfill(4)
+                part3 = str(int(e_lon))+"E"+str(int((e_lon-int(e_lon))*60*100)).zfill(4)
                 part4 = str(int(e_dep)*100).rjust(5," ")+"000"+"L".rjust(84," ")+str(int(e_mag*100)).zfill(3)
                 output_content.append(part1+part2+part3+part4)
         

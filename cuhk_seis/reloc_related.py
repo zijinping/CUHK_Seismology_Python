@@ -16,6 +16,115 @@ import re
 from obspy import UTCDateTime
 import pandas as pd
 import matplotlib.pyplot as plt
+import warnings
+from obspy.geodetics import gps2dist_azimuth
+from tqdm import tqdm
+
+def prep_MOD(head,lon_list,lat_list,dep_list,vel_list,poisson_list):
+    """
+    Output MOD file for the tomoDD based on information provided
+    Parameters:
+    head: bld,nx,ny,nz. bld:resolution; nx/ny/nz: nodes for lon/lat/dep
+    vel_list: P wave velocity list
+    poisson_list: possion ratio of each layer
+    len(lon_list)==nx; len(lat_list)==ny; len(dep_list)==nz;
+    len(vel_list)==nz;len(poisson_list)==nz
+    """
+    f = open("MOD",'w')
+    bld = head[0];
+    nx = head[1];
+    ny = head[2];
+    nz = head[3];
+    if nx != len(lon_list):
+        raise Exception("Wrong longitude list length")
+    if ny != len(lat_list):
+        raise Exception("Wrong latitude list length")
+    if nz != len(dep_list):
+        raise Exception("Wrong depth list length")
+    if nz != len(vel_list):
+        raise Exception("Wrong velocity list length")
+    if nz != len(poisson_list):
+        raise Exception("Wrong poisson list length")
+
+    if len(lon_list) != len(set(lon_list)):
+        raise Exception("Duplicated values in longitude list.")
+    if len(lat_list) != len(set(lat_list)):
+        raise Exception("Duplicated values in latitude list.")
+    if len(dep_list) != len(set(dep_list)):
+        raise Exception("Duplicated values in depth list.")
+
+    for i in range(len(lon_list)-1):
+        if lon_list[i]>lon_list[i+1]:
+            warnings.warn(f"lon_list[{i}]>lon_list[{i+1}]")
+    for i in range(len(lat_list)-1):
+        if lat_list[i]>lat_list[i+1]:
+            warnings.warn(f"lat_list[{i}]>lat_list[{i+1}]")
+    for i in range(len(dep_list)-1):
+        if dep_list[i]>dep_list[i+1]:
+            warnings.warn(f"dep_list[{i}]>dep_list[{i+1}]")
+
+    f.write(f"{bld} {nx} {ny} {nz}\n")
+    for i in range(len(lon_list)):
+        f.write(str(lon_list[i]))
+        if i != len(lon_list):
+            f.write(" ")
+    f.write("\n")
+    for i in range(len(lat_list)):
+        f.write(str(lat_list[i]))
+        if i != len(lat_list):
+            f.write(" ")
+    f.write("\n")
+    for i in range(len(dep_list)):
+        f.write(str(dep_list[i]))
+        if i != len(dep_list):
+            f.write(" ")
+    f.write("\n")
+        
+    for k in range(nz):
+        for j in range(ny):
+            for i in range(nx):
+                f.write(format(vel_list[k],'5.3f'))
+                if i != (nx-1):
+                    f.write(" ")
+            f.write("\n")
+    for k in range(nz):
+        for j in range(ny):
+            for i in range(nx):
+                f.write(format(poisson_list[k],'5.3f'))
+                if i != (nx-1):
+                    f.write(" ")
+            f.write("\n")
+    f.close()
+
+def pha_sel(pha_file,e_list=[],remove_net=False):
+    '''
+    Select phases of events in e_list
+    if need to remove net name.
+    '''
+    out = []   # output
+    with open(pha_file,'r') as f:
+        for line in f:
+            line = line.rstrip()
+            if line[0]=="#":
+                _evid = re.split(" +",line)[-1]
+                evid = int(_evid)
+                if evid in e_list or e_list==[]:
+                    status = True
+                    out.append(line)
+                else:
+                    status = False
+            else:
+                if status==True:
+                    if remove_net:
+                        out.append(line[2:])
+                    else:
+                        out.append(line)
+    f.close()
+
+    with open(pha_file+".sel",'w') as f:
+        for line in out:
+            f.write(line+'\n')
+    f.close()
 
 def pha_subset(pha_file,loc_filter,obs_filter=8):
     """
@@ -125,7 +234,7 @@ def load_sum_rev(sum_file):
     f.close()
     return sum_list
 
-def load_hypoDD(reloc_file="hypoDD.reloc",shift_hour=0):
+def load_DD(reloc_file="hypoDD.reloc",shift_hour=0):
     """
     load results of hypoDD
     return eve_dict, df
@@ -152,7 +261,7 @@ def load_hypoDD(reloc_file="hypoDD.reloc",shift_hour=0):
                 data_arr = np.vstack((data_arr,data))
             except:
                 data_arr = np.array(data)
-            eve_id = data[0]
+            eve_id = int(data[0])
             eve_lat = data[1]
             eve_lon = data[2]
             eve_dep = data[3]
@@ -165,10 +274,28 @@ def load_hypoDD(reloc_file="hypoDD.reloc",shift_hour=0):
             eve_time = UTCDateTime(year,month,day,hour,minute)+seconds-shift_hour*60*60
             eve_time_str=eve_time.strftime("%Y%m%d%H%M%S%f")[:16]
             eve_mag =data[16]
-            eve_dict[eve_time_str]=[float(eve_lon),float(eve_lat),float(eve_dep),float(eve_mag),int(eve_id)]
+            eve_dict[eve_id]=[float(eve_lon),float(eve_lat),float(eve_dep),float(eve_mag),eve_time]
     f.close()
     df = pd.DataFrame(data=data_arr,columns=columns)
     return eve_dict,df
+
+def compare_DD(dd1_path,dd2_path):
+    dd1,_ = load_DD(dd1_path)
+    dd2,_ = load_DD(dd2_path)
+    f = open("dd_diff.dat",'w')
+    for key in dd1:
+        try: 
+            lon1 = dd1[key][0] 
+            lon2 = dd2[key][0] 
+            lat1 = dd1[key][1] 
+            lat2 = dd2[key][1] 
+            dep1 = dd1[key][2] 
+            dep2 = dd2[key][2]
+            print("dx,dy,dz:",abs(lon1-lon2)*111*1000,abs(lat1-lat2)*111*1000,abs(dep1-dep2)*1000)
+            f.write(f"{abs(lon1-lon2)*111*1000} {abs(lat1-lat2)*111*1000} {abs(dep1-dep2)*1000}\n")
+        except: 
+            pass 
+    f.close()
 
 def hypoDD_mag_mapper(reloc_file,out_sum):
     """
@@ -223,6 +350,8 @@ def hypoDD_ref_days(reloc_file,ref_time,shift_hours=0):
             day = int(re.split(" +",line)[13])
             hour = int(re.split(" +",line)[14])
             minute = int(re.split(" +",line)[15])
+            seconds = float(re.split(" +",line)[16])
+            eve_time = UTCDateTime(year,month,day,hour,minute)+seconds
             days = (eve_time - ref_time)*1.0/(24*60*60)
             new_line=line[:-1]+" "+format(days,'4.2f')
             new_add.append(new_line)
@@ -436,3 +565,111 @@ def hypoDD_rmdup(in_file="total_hypoDD.reloc"):
                 f.write(evid_mapper[evid][0])
             f.close()
     print(log_record)
+
+def gen_dtcc(sta_list,sum_file="out.sum",work_dir="./",cc_threshold=0.7,min_link=4,max_dist=4):
+    '''
+    This function generate dt.cc.* files from the output of SCC results
+    
+    Parameters:
+        sta_list: list of stations to be processed
+        sum_file: summary(*.sum) file generated by HYPOINVERSE
+        work_dir: the directory of mp_scc results
+        cc_threshold: threshold value of cross_correlation
+        min_link: minumum links to form an event pair
+        max_dist: maximum distance accepted to form an event pair, unit km
+    '''
+    sum_rev= load_sum_rev(sum_file) # dictionary {evid: [e_lon,e_lat,e_dep,e_mag]}
+    sum_dict= load_sum(sum_file)    # dictionary {"YYYYmmddHHMMSSff":[e_lon,e_lat,e_dep,e_mag]}
+    work_dir = os.path.abspath(work_dir)
+    evid_list = []                  # event list included by scc results
+    to_cc_list = []                 # event list included in the ouput dt.cc.* results
+    
+    # Remove existing dt.cc files 
+    cc_files = glob.glob(os.path.join(work_dir,"dt.cc*"))
+    for cc_file in cc_files:
+        os.remove(cc_file)
+        
+    print(">>> Loading in scc results ...")
+    for sta in tqdm(sta_list):                                # Loop for station
+        for pha in ["P","S"]:                                 # Loop for phases
+            sta_pha = sta+"_"+pha
+            globals()[sta_pha+"_cc_dict"] = {}                # Initiate dictionary
+            sta_pha_path = os.path.join(work_dir,sta_pha)
+            for file in os.listdir(sta_pha_path):
+                if file[-3:]!=".xc":                          # none scc results file
+                    continue
+                with open(os.path.join(sta_pha_path,file),'r') as f:
+                    for line in f:
+                        line = line.rstrip()
+                        path1,arr1,_,path2,arr2,_,cc,aa=re.split(" +",line.rstrip())
+                        eve_folder1 = re.split("\/",path1)[1] # folder name of event
+                        evid1 = sum_rev[eve_folder1][0]
+                        arr1 =float(arr1)                     # arrival time
+                        eve_folder2 = re.split("\/",path2)[1]
+                        evid2 = sum_rev[eve_folder2][0]
+                        if evid1 not in evid_list:
+                            evid_list.append(evid1)
+                        if evid2 not in evid_list:
+                            evid_list.append(evid2)
+                        arr2 = float(arr2)                    # arrival time
+                        cc = float(cc)                        # cross correlation coefficient
+                        aa = float(aa)                        # amplitude ratio
+                        if cc >=cc_threshold:
+                            try:
+                                globals()[sta_pha+"_cc_dict"][evid1][evid2]=[arr1,arr2,cc,aa]
+                            except:
+                                globals()[sta_pha+"_cc_dict"][evid1]={} # Initiation
+                                globals()[sta_pha+"_cc_dict"][evid1][evid2]=[arr1,arr2,cc,aa]
+    evid_list.sort()
+    print("<<< Loading complete! <<<")
+    
+    print(">>> Preparing dt.cc files ...")
+    ##----------------
+    for i,evid1 in enumerate(evid_list):
+        print(evid1,"  ",end='\r')
+        evid1_evlo = sum_dict[evid1][1]
+        evid1_evla = sum_dict[evid1][2]
+        out_index = int(i/6000)# Every 6k events preserve in a seperate dt.cc.* file.
+                               # to avoid extreme large out file size.
+        for evid2 in evid_list[i+1:]:
+            evid2_evlo = sum_dict[evid2][1]
+            evid2_evla = sum_dict[evid2][2]
+            dist,_,_ = gps2dist_azimuth(evid1_evla,evid1_evlo,evid2_evla,evid2_evlo)
+            if dist/1000>max_dist:                          # discard large distance events
+                continue
+            link_cc=[]
+            for sta in sta_list:                            # Loop for stations
+                for pha in ["P","S"]:                       # Loop for phases
+                    sta_pha = sta+"_"+pha               
+                    try:
+                        arr1,arr2,cc,aa = globals()[sta_pha+"_cc_dict"][evid1][evid2]
+                        link_cc.append([sta,arr1-arr2,cc,pha])
+                    except:
+                        continue
+            if len(link_cc)>=min_link:
+                if evid1 not in to_cc_list:
+                    to_cc_list.append(evid1)
+                if evid2 not in to_cc_list:
+                    to_cc_list.append(evid2)
+                cc_file = os.path.join(work_dir,"dt.cc."+f"{out_index}")
+                with open(cc_file,'a') as f:                # Write in results
+                    f.write(f"# {format(evid1,'5d')} {format(evid2,'5d')} 0\n")
+                    for record in link_cc:
+                        f.write(f"{record[0][:2]}{record[0]} {format(record[1],'7.4f')} {record[2]} {record[3]}\n")
+                f.close()
+    print(">>> Number of events in dt.cc is: ",len(to_cc_list))
+    
+    cont = []
+    cc_files = glob.glob(os.path.join(work_dir,"dt.cc*"))
+    cc_files.sort()
+    for cc_file in cc_files:
+        with open(cc_file,'r') as f:
+            for line in f:
+                cont.append(line)
+        f.close()
+        os.remove(cc_file)
+    with open(os.path.join(work_dir,"dt.cc"),'w') as f:
+        for line in cont:
+            f.write(line)
+    f.close()    
+    print("<<< dt.cc files generated! <<<")

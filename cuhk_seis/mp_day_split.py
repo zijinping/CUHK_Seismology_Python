@@ -26,6 +26,9 @@ def load_sta(sta_file):
     return sta_dict
 
 def pos_write(o_folder,sta_dict):
+    '''
+    position write of station information
+    '''
     sac_list=glob.glob(o_folder+"/"+"*.SAC")
     inp_status = False
     st = obspy.read(sac_list[0])
@@ -129,17 +132,21 @@ def day_split(i_path,o_path,folder,sta_dict,format,shift_hour=0):
                 #save the data
                 for tr in st:
                     chn=tr.stats.channel
-                    if format=="SAC":
-                        f_name=trim_s.strftime("%Y%m%d")+"_"+net+"_"+sta+"_"+chn+".SAC"
-                    if format=="MSEED":
-                        f_name=trim_s.strftime("%Y%m%d")+"_"+net+"_"+sta+"_"+chn+".mseed"
-                    tr.write(o_folder+"/"+f_name,format=format)  
+                    if format.upper()=="SAC":
+                        f_name=net+"."+sta+"."+chn+"__"+\
+                               trim_s.strftime("%Y%m%dT%H%M%SZ")+"__"+\
+                               trim_e.strftime("%Y%m%dT%H%M%SZ")+".SAC"
+                    if format.upper()=="MSEED":
+                        f_name=net+"."+sta+"."+chn+"__"+\
+                               trim_s.strftime("%Y%m%dT%H%M%SZ")+"__"+\
+                               trim_e.strftime("%Y%m%dT%H%M%SZ")+".mseed"
+                    tr.write(o_folder+"/"+f_name,format=format)
                     
         if format=="SAC":
             pos_write(o_folder,sta_dict)
             
             
-def mp_day_split(i_path,o_path,sta_file,format="SAC",shift_hour=0):
+def mp_day_split(i_path,o_path,sta_file,format="mseed",shift_hour=0):
     '''
     This function reads in the data from QS5A devices and split them by days
     Parameters:
@@ -215,9 +222,8 @@ if __name__=="__main__":
     o_path: output path. output_path/sta_name/seismic_files.
     sta_file: station files containing the longitude and latitude information
     """
-    i_path = "/home/zijinping/Desktop/testtest/raw_data"
-    o_path = '/home/zijinping/Desktop/testtest/day_data'
-    sta_file = '/home/zijinping/Desktop/zijinping/resources/stations/sta_sum_20201121.txt'
+    i_path = "./raw_data"
+    o_path = './day_data'
+    sta_file = './sta.txt'
     
     mp_day_split(i_path,o_path,sta_file)
-
