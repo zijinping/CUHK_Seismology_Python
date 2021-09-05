@@ -54,7 +54,7 @@ matploblib
   
 - Analysis
   - topodd
-  - Abient Noise
+  - Ambient Noise
     - [MSnoise](http://www.msnoise.org/)
     
 - Plotting
