@@ -6,7 +6,7 @@ from obspy.io.sac.sactrace import SACTrace
 import shutil
 import re
 import matplotlib.pyplot as plt
-from cuhk_seis.basic_utils import read_sac_ref_time,spherical_dist,get_st
+from cuhk_seis.utils import read_sac_ref_time,spherical_dist,get_st
 import numpy as np
 from tqdm import tqdm
 import pickle

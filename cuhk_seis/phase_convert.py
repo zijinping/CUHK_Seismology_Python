@@ -11,44 +11,115 @@ from obspy import UTCDateTime
 import os
 import sys
 import time
-from utils.reloc_related import load_DD
+from cuhk_seis.reloc_related import load_DD
 import time
-from utils.basic_utils import WY_para
+from cuhk_seis.utils import WY_para
+from tqdm import tqdm
 
-def sta2vel(net_list=[],lon_lat=[]):
-    '''
-    Convert station file into velest format
-    Velest only accept station name with 4 characters
-    lon_lat: [lon_min,lon_max,lat_min,lat_max]
-    '''
-    lon_min = lon_lat[0]
-    lon_max = lon_lat[1]
-    lat_min = lon_lat[2]
-    lat_max = lon_lat[3]
-    ICC_count=0
-    output = "station.vel"
-    f = open(output,'w')
-    f.write("(a4,f7.4,a1,1x,f8.4,a1,1x,i4,1x,i1,1x,i3,1x,f5.2,2x,f5.2)\n")
-    wy_para = WY_para()
-    sta_locs = wy_para.dict['sta_locs']
-    for sta_loc in sta_locs:
-        sta_lon,sta_lat,sta_ele,net,sta,_ = sta_loc
-        if net not in net_list:
-            continue
-        if sta_lon<lon_min or sta_lon>lon_max:
-            continue
-        if sta_lat<lat_min or sta_lat>lat_max:
-            continue
-        ICC_count+=1
-        if len(sta)==5:
-            f.write(sta[1:]+format(sta_lat,'7.4f')+"N "+format(sta_lon,'8.4f')\
-                    +"E    0 1 "+format(ICC_count,'3d')+"  0.00   0.00   1\n")
-        else:
-            f.write(format(sta,'4s')+format(sta_lat,'7.4f')+"N "+format(sta_lon,'8.4f')\
-                    +"E    0 1 "+format(ICC_count,'3d')+"  0.00   0.00   1\n")
-    f.write("                                                  ")
+
+def velout_mod_2_dd_mod(in_file="velout.mod",out_file="velout.mod.dd"):
+    """
+    Load velocity structure from VELEST *.mod output file to HypoDD velocity input format
+    """
+    lines = []
+    with open(in_file,'r') as f:
+        for line in f:
+            line = line.strip()
+            lines.append(line)
+    f.close()
+
+    P_lays = []
+    P_vels = []
+    S_lays = []
+    S_vels = []
+
+    P_lay_qty = int(lines[1])
+    for line in lines[2:2+P_lay_qty]:
+        _vel,_dep,_damp = re.split(" +",line)
+        vel = float(_vel); dep = float(_dep)
+        P_vels.append(vel); P_lays.append(dep)
+
+    S_lay_qty = int(lines[2+P_lay_qty])
+    if P_lay_qty != S_lay_qty:
+        raise Exception("The qty of P and S layers are different")
+
+    for line in lines[3+P_lay_qty:3+P_lay_qty+S_lay_qty]:
+        _vel,_dep,_damp = re.split(" +",line)
+        vel = float(_vel); dep = float(_dep)
+        S_vels.append(vel); S_lays.append(dep)
+
+    if P_lays != S_lays:
+        print("Warning: Layers of P and S are different")
+        print(P_lays)
+        print(S_lays)
+
+    f = open(out_file,'w')
+
+    for lay in P_lays:
+        f.write(format(lay,"6.3f")+" ")
+    f.write("-9\n")
+
+    for vel in P_vels:
+        f.write(format(vel,"6.3f")+" ")
+    f.write("-9\n")
+
+    for i in range(len(P_vels)):
+        f.write(format(P_vels[i]/S_vels[i],'6.3f')+" ")
+    f.write("-9\n")
+
+def phs_add_mag(phs_file,mag_file):
+    """
+    Add magnitude information to the phs file. If no magnitude, set it to -9
+    """
+    out_file = phs_file+".mag"
+
+    # load in magnitude information
+    mag_dict = {}
+    with open(mag_file,'r') as f:
+        for line in f:
+            line = line.strip()
+            _evid,_mag = re.split(" +",line)
+            evid = int(_evid)
+            mag = float(_mag)
+            mag_dict[evid] = mag
     
-def phs2vel(phs_file,mag_threshold=-9):
+    output_lines = []
+    evid_line_idxs = []
+    evid_list = []
+    i = 0
+    tmp_lines = []
+
+    with open(phs_file,'r') as f:
+        for line in f:
+            line = line.rstrip()
+            if line[:5] != "     ":
+                tmp_lines.append(line)
+            if line[:5] == "     ":
+                tmp_lines.append(line)
+                evid = int(re.split(" +",line)[1])
+                try:
+                    e_mag = mag_dict[evid]
+                    if e_mag < 0:
+                        e_mag = 0
+                except:
+                    e_mag = 0
+                eve_line = tmp_lines[0]
+                if len(eve_line) < 126:
+                    eve_line = eve_line[:36]+str(int(e_mag*100)).zfill(3)+eve_line[39:]
+                output_lines.append(eve_line)  # append the event line
+                for line in tmp_lines[1:]:
+                    output_lines.append(line)
+                tmp_lines = []                 # empty the temporary line
+    f.close()
+
+    with open(phs_file+".mag","w") as f:
+        for line in output_lines:
+            f.write(line+"\n")
+
+def phs2vel(phs_file,mag_threshold=-9,qty_limit=None):
+    """
+    convert *.phs file into velest format file
+    """
     count = 0
     cont = []    # Save the content of the phase file
     out_dict = {}     # output content
@@ -57,7 +128,7 @@ def phs2vel(phs_file,mag_threshold=-9):
             cont.append(line.rstrip())
     f.close()
 
-    for line in cont:
+    for line in tqdm(cont):
         if re.match("\d+",line[:6]):    # line start with digit is event line
             e_label = line[:16]
             e_time = UTCDateTime.strptime(line[:12],'%Y%m%d%H%M')+int(line[12:16])*0.01
@@ -66,15 +137,22 @@ def phs2vel(phs_file,mag_threshold=-9):
             e_dep = int(line[31:36])*0.01
             record_status = True
             try:
-                e_mag = int(line[123:126])*0.01
+                if len(line) < 126:
+                    e_mag = int(line[36:39])*0.01
+                else:
+                    e_mag = int(line[123:126])*0.01
             except:
                 e_mag = 0
             if e_mag<mag_threshold:
                 record_status=False
+            if e_dep==0:                # no zero depth for VELEST
+                record_status=False
+            if qty_limit!=None and count >= qty_limit:
+                record_status = False
+
             if record_status == False:
                 continue
             count += 1
-            print(line)
             out_dict[e_label] = {}    # dict with event line str as key
             out_dict[e_label]["e_time"]=e_time
             out_dict[e_label]["e_lat"]=e_lat
@@ -91,8 +169,6 @@ def phs2vel(phs_file,mag_threshold=-9):
                 continue
             sta = line[:5].split()
             sta = sta[0]
-            if len(sta)==5:
-                sta = sta[1:5]          # Velest only accept 4 station character
             net = line[5:7]
             if line[14] == "P":
                 pha = "P"
@@ -104,7 +180,7 @@ def phs2vel(phs_file,mag_threshold=-9):
                 phs_time = UTCDateTime.strptime(line[17:29],"%Y%m%d%H%M")+\
                             int(line[42:46])*0.01
                 diff_time = phs_time - e_time
-            pha_record = sta.ljust(4," ")+pha+"1"+format(diff_time,'6.2f')
+            pha_record = sta.ljust(5," ")+pha+"1"+format(diff_time,'6.2f')
             out_dict[e_label]["phase"].append(pha_record)
     print(f"# Total {count} events!")
     cnv_file = phs_file+".cnv"
@@ -128,11 +204,11 @@ def phs2vel(phs_file,mag_threshold=-9):
             i=i+1
         tmp = i%6
         if tmp>0:
-            f.write((6-tmp)*12*" "+"\n") # add space to fill line
+            f.write((6-tmp)*13*" "+"\n") # add space to fill line
         elif tmp==0:
             f.write("\n")
         f.write("    \n")
-    f.write("9999")
+    f.write("9999")              # indicates end of file for VELEST
     f.close()
 
 def dd2fdsn(in_file,subset=None):

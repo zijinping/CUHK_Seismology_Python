@@ -1,4 +1,4 @@
-#/usr/bin/bash
+#!/usr/bin/bash
 ###################################
 # coding: utf-8
 # Author: ZI,Jinping
@@ -126,7 +126,7 @@ def pha_sel(pha_file,e_list=[],remove_net=False):
             f.write(line+'\n')
     f.close()
 
-def pha_subset(pha_file,loc_filter,obs_filter=8):
+def pha_subset(pha_file,loc_filter,obs_filter=8,out_path=None):
     """
     *.pha file is the input file for hypoDD ph2dt, this function subset the
     pha file by the boundary condition and the minimum observation condition.
@@ -137,10 +137,14 @@ def pha_subset(pha_file,loc_filter,obs_filter=8):
     pha_file: Str. The input file.
     loc_filter: array in format [lon_min, lon_max, lat_min, lat_max]
     obs_filter: The minimum observation
+    out_path: file path for the target file
     """
 
     lon_min, lon_max, lat_min, lat_max = loc_filter
-    out_file = pha_file+".st"
+    if out_path == None:
+        out_file = pha_file+".st"
+    else:
+        out_file = out_path
     f = open(out_file,"w")
     f.close()
     pha_content = []
@@ -195,8 +199,9 @@ def load_sum(sum_file):
             --event latitude
             --event depth
             --event magnitude
+            --event travel time residual
     """
-    sum_list = {}
+    sum_dict = {}
     with open(sum_file,'r') as f:
         for line in f:
             eve_id=int(line[136:146])
@@ -205,8 +210,9 @@ def load_sum(sum_file):
             evlo = int(line[23:26])+0.01*int(line[27:32])/60
             evdp = int(line[31:36])*0.01
             e_mag = int(line[123:126])*0.01
-            sum_list[eve_id] = [eve_folder,evlo,evla,evdp,e_mag]
-    return sum_list
+            e_res = int(line[48:52])*0.01
+            sum_dict[eve_id] = [eve_folder,evlo,evla,evdp,e_mag,e_res]
+    return sum_dict
 
 def load_sum_rev(sum_file):
     """
@@ -219,9 +225,10 @@ def load_sum_rev(sum_file):
             --event latitude
             --event depth
             --event magnitude
+            --event travel time residual
     """
 
-    sum_list = {}
+    sum_dict = {}
     with open(sum_file,'r') as f:
         for line in f:
             eve_id=int(line[136:146])
@@ -230,9 +237,10 @@ def load_sum_rev(sum_file):
             evlo = int(line[23:26])+0.01*int(line[27:32])/60
             evdp = int(line[31:36])*0.01
             e_mag = int(line[123:126])*0.01
-            sum_list[eve_folder] = [eve_id,evlo,evla,evdp,e_mag]
+            e_res = int(line[48:52])*0.01
+            sum_dict[eve_folder] = [eve_id,evlo,evla,evdp,e_mag,e_res]
     f.close()
-    return sum_list
+    return sum_dict
 
 def load_DD(reloc_file="hypoDD.reloc",shift_hour=0):
     """
@@ -251,32 +259,28 @@ def load_DD(reloc_file="hypoDD.reloc",shift_hour=0):
            "YR","MO","DY","HR","MI","SC","MAG",\
            "NCCP","NCCS","NCTP","NCTS","RCC","RCT","CID"]
     number = 0
-    with open(reloc_file,"r") as f:
-        for line in f:
-            number = number+1
-            if number%10==0:
-                print("Current in process %d    "%number,end='\r')
-            data=re.split(" +",line.rstrip())[1:]
-            try:
-                data_arr = np.vstack((data_arr,data))
-            except:
-                data_arr = np.array(data)
-            eve_id = int(data[0])
-            eve_lat = data[1]
-            eve_lon = data[2]
-            eve_dep = data[3]
-            year = int(data[10])
-            month = int(data[11])
-            day = int(data[12])
-            hour = int(data[13])
-            minute = int(data[14])
-            seconds = float(data[15])
-            eve_time = UTCDateTime(year,month,day,hour,minute)+seconds-shift_hour*60*60
-            eve_time_str=eve_time.strftime("%Y%m%d%H%M%S%f")[:16]
-            eve_mag =data[16]
-            eve_dict[eve_id]=[float(eve_lon),float(eve_lat),float(eve_dep),float(eve_mag),eve_time]
-    f.close()
-    df = pd.DataFrame(data=data_arr,columns=columns)
+
+    dataset = np.loadtxt(reloc_file)
+    
+    if dataset.shape[1] == 24:
+        columns = ["ID","LAT","LON","DEPTH","X","Y","Z","EX","EY","EZ",\
+                   "YR","MO","DY","HR","MI","SC","MAG",\
+                   "NCCP","NCCS","NCTP","NCTS","RCC","RCT","CID"]
+    if dataset.shape[1] == 25:
+        columns = ["ID","LAT","LON","DEPTH","X","Y","Z","EX","EY","EZ",\
+                   "YR","MO","DY","HR","MI","SC","MAG",\
+                   "NCCP","NCCS","NCTP","NCTS","RCC","RCT","CID","DAY"]
+    
+    for i,data in enumerate(dataset):
+        eve_id = data[0]
+        eve_lat = data[1]
+        eve_lon = data[2]
+        eve_dep = data[3]
+        eve_mag = data[16]
+        eve_time = UTCDateTime(int(data[10]),int(data[11]),int(data[12]),int(data[13]),int(data[14]),0)+data[15] - shift_hour*50*60
+        eve_dict[int(eve_id)]=[float(eve_lon),float(eve_lat),float(eve_dep),float(eve_mag),eve_time]
+
+    df = pd.DataFrame(data=dataset,columns=columns)
     return eve_dict,df
 
 def compare_DD(dd1_path,dd2_path):

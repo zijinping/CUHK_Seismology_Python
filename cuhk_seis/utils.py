@@ -16,8 +16,74 @@ import glob
 import re
 from obspy import UTCDateTime
 import pandas as pd
+from obspy.geodetics import gps2dist_azimuth
 
 root_path="/NAS1/Sichuan_data/continous_waveform_sac/"
+
+def in_ellipse(xy_list,width,height,angle=0,xy=[0,0]):
+    """
+    Find data points inside an ellipse and return index list
+
+    Parameters:
+        xy_list: Points needs to be deteced.
+        width: Width of the ellipse
+        height: Height of the ellipse
+        angle: angle in degrees
+        xy: the origin of the ellipse
+    """
+    if isinstance(xy_list,list):
+        xy_list = np.array(xy_list)
+    if not isinstance(xy_list,np.ndarray):
+        raise Exception(f"Not recoginzed data type: {type(xy_list)}, should be list or np.ndarray")
+    new_xy_list = xy_list.copy()
+    new_xy_list = new_xy_list - xy
+
+    #------------ define coordinate conversion matrix----------
+    theta = angle/180*np.pi         # degree to radians
+    con_mat = np.zeros((2,2))
+    con_mat[:,0] = [np.cos(theta),np.sin(theta)]
+    con_mat[:,1] = [np.sin(theta),-np.cos(theta)]
+
+    tmp = np.matmul(con_mat,new_xy_list.T)
+    con_xy_list = tmp.T
+
+    #------------ check one by one ----------------------------
+    idxs = []
+    for i,[x,y] in enumerate(con_xy_list):
+        if ((x/(width/2))**2+(y/(height/2))**2) < 1:
+            idxs.append(i)
+        
+    return idxs
+    
+
+def loc_by_width(lon1,lat1,lon2,lat2,width,direction='right'):
+    """
+    width, width in degree
+    """
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    sphe_dist = spherical_dist(lon1,lat1,lon2,lat2)
+    #dist,_,_ = gps2dist_azimuth(lat1,lon1,lat2,lon2)
+
+    delta_lon = dlon*width/sphe_dist
+    delta_lat = dlat*width/sphe_dist
+
+    # rotate based right or left
+    if direction == "right":
+        tmp = delta_lon
+        delta_lon = delta_lat
+        delta_lat = -tmp
+    if direction == "left":
+        tmp = delta_lon
+        delta_lon = -delta_lat
+        delta_lat = tmp
+
+    new_lon1 = lon1 + delta_lon
+    new_lat1 = lat1 + delta_lat
+    new_lon2 = lon2 + delta_lon
+    new_lat2 = lat2 + delta_lat
+
+    return new_lon1,new_lat1,new_lon2,new_lat2
 
 def read_sac_ref_time(tr):
     """
@@ -224,19 +290,24 @@ class WY_para():
         self.dict["wells"]=tmp_arr
         f.close()
 
-def sta2inv(sta_file,out_file):
-    net_stas = []
+def read_sta_file(sta_file):
+    """
+    Read information from the station file with free format: net,sta,lon,lat,ele,label.
+    The label is designed with the purpose to distinguish stations into types.
+    """
     cont = []
     with open(sta_file,'r') as f:
         for line in f:
             line = line.rstrip()
             net,sta,_lon,_lat,_ele,label = re.split(" +",line)
-            net_sta = net+"_"+sta
-            net_stas.append(net_sta)
             cont.append([net,sta,float(_lon),float(_lat),int(_ele),label])
     f.close()
-    f_inv = open(out_file,'w')
+    if len(cont)==0:
+        raise Exception(f"No content in the station file {sta_file}")
+    return cont
 
+def to_inv_sta_file(cont,out_file):
+    f_dd = open(out_file,'w')
     for tmp in cont:
         lat = tmp[3]
         lon = tmp[2]
@@ -250,24 +321,19 @@ def sta2inv(sta_file,out_file):
         lat_i = int(lat)
         lat_f = lat-lat_i
         f_inv.write(format(sta,"<6s")+format(net,"<4s")+"SHZ  "+format(lat_i,">2d")+" "+\
-                    format(lat_f*60,">7.4f")+" "+format(lon_i,">3d")+" "+format(lon_f*60,">7.4f")+\
-                    "E"+format(ele,">4d")+"\n")
+                format(lat_f*60,">7.4f")+" "+format(lon_i,">3d")+" "+format(lon_f*60,">7.4f")+\
+                "E"+format(ele,">4d")+"\n")
     f_inv.close()
 
+def sta2inv(sta_file,out_file):
+    """
+    Convert station file into hypoinverse format
+    """
+    cont = read_sta_file(sta_file)      # Read in information
+    to_inv_sta_file(cont,out_file)  # Write into files
 
-def sta2dd(sta_file,out_file):
-    net_stas = []
-    cont = []
-    with open(sta_file,'r') as f:
-        for line in f:
-            line = line.rstrip()
-            net,sta,_lon,_lat,_ele,label = re.split(" +",line)
-            net_sta = net+"_"+sta
-            net_stas.append(net_sta)
-            cont.append([net,sta,float(_lon),float(_lat),int(_ele),label])
-    f.close()
+def to_dd_sta_file(cont,out_file):
     f_dd = open(out_file,'w')
-
     for tmp in cont:
         lat = tmp[3]
         lon = tmp[2]
@@ -283,3 +349,40 @@ def sta2dd(sta_file,out_file):
         f_dd.write(format(net_sta,"<9s")+format(lat_i+lat_f,">9.6f")+format(lon_i+lon_f,">12.6f")+\
                    " "+format(ele,'>5d')+"\n")
     f_dd.close()
+
+def sta2dd(sta_file,out_file):
+    """
+    Convert station file into hypoDD format
+    """
+    cont = read_sta_file(sta_file)      # Read in information
+    to_dd_sta_file(cont,out_file)  # Write into files
+
+def to_vel_sta_file(cont,out_file,ele_zero=True):
+    f_vel = open(out_file,'w')
+    f_vel.write("(a5,f7.4,a1,1x,f8.4,a1,1x,i4,1x,i1,1x,i3,1x,f5.2,2x,f5.2,3x,i1)\n")
+    sta_count = 1
+    for tmp in cont:
+        lat = tmp[3]
+        lon = tmp[2]
+        ele = tmp[4]
+        net = tmp[0]
+        sta = tmp[1]
+        label = tmp[5]
+        if ele_zero:
+            ele = 0
+            f_vel.write(f"{format(sta,'<5s')}{format(lat,'7.4f')}N {format(lon,'8.4f')}E {format(ele,'4d')} 1 "+\
+                        f"{format(sta_count,'3d')} {format(0,'5.2f')}  {format(0,'5.2f')}   1\n")
+        else:
+            f_vel.write(f"{format(sta,'<5s')}{format(lat,'7.4f')}N {format(lon,'8.4f')}E {format(ele,'4d')} 1 "+\
+                        f"{format(sta_count,'3d')} {format(0,'5.2f')}  {format(0,'5.2f')}   1\n")
+        sta_count += 1
+    f_vel.write("  \n")   # signal of end of file for VELEST
+    f_vel.close()
+
+def sta2vel(sta_file,out_file):
+    """
+    Convert station file into VELEST format with 5 characters,
+    which is applicable for the update VELEST program modified by Hardy ZI
+    """
+    cont = read_sta_file(sta_file)
+    to_vel_sta_file(cont,out_file)

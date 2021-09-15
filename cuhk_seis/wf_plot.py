@@ -6,7 +6,7 @@
 #----------------------------------------------------------------------
 from obspy import read
 import matplotlib.pyplot as plt
-from utils.basic_utils import read_sac_ref_time,spherical_dist
+from cuhk_seis.utils import read_sac_ref_time,spherical_dist
 import numpy as np
 
 def wf_dist_plot(st,length=10,color=None,label_sta=True,out_format="PNG",scaling_factor=2):

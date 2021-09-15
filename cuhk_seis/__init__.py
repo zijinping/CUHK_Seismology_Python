@@ -1,5 +1,5 @@
 """
-    Usage of basic_utils: 
+    Usage of utils: 
     year,month,day = month_day(year,julday)
     days = julday(year,month,day)
     status, st = get_data(net,sta,chn,starttime,endtime,f_folder,time_zone_effect=0)
