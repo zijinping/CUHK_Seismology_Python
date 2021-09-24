@@ -1,4 +1,3 @@
-#/usr/bin/bash
 # -*- coding: utf-8 -*-
 #-----------------------------------------------------------------------------
 #     Author: Jinping ZI
@@ -20,70 +19,20 @@ from obspy.geodetics import gps2dist_azimuth
 
 root_path="/NAS1/Sichuan_data/continous_waveform_sac/"
 
-def in_ellipse(xy_list,width,height,angle=0,xy=[0,0]):
+def draw_vel(ax,dep_list,vel_list,color='k',linestyle='-'):
     """
-    Find data points inside an ellipse and return index list
-
-    Parameters:
-        xy_list: Points needs to be deteced.
-        width: Width of the ellipse
-        height: Height of the ellipse
-        angle: angle in degrees
-        xy: the origin of the ellipse
+    Draw velocity line on the ax based on the depth list and velocity list
     """
-    if isinstance(xy_list,list):
-        xy_list = np.array(xy_list)
-    if not isinstance(xy_list,np.ndarray):
-        raise Exception(f"Not recoginzed data type: {type(xy_list)}, should be list or np.ndarray")
-    new_xy_list = xy_list.copy()
-    new_xy_list = new_xy_list - xy
-
-    #------------ define coordinate conversion matrix----------
-    theta = angle/180*np.pi         # degree to radians
-    con_mat = np.zeros((2,2))
-    con_mat[:,0] = [np.cos(theta),np.sin(theta)]
-    con_mat[:,1] = [np.sin(theta),-np.cos(theta)]
-
-    tmp = np.matmul(con_mat,new_xy_list.T)
-    con_xy_list = tmp.T
-
-    #------------ check one by one ----------------------------
-    idxs = []
-    for i,[x,y] in enumerate(con_xy_list):
-        if ((x/(width/2))**2+(y/(height/2))**2) < 1:
-            idxs.append(i)
+    points_list = []
+    points_list.append([dep_list[0],vel_list[0]])
+    for i in range(1,len(dep_list)):
+        points_list.append([dep_list[i],vel_list[i-1]])
+        points_list.append([dep_list[i],vel_list[i]])
         
-    return idxs
-    
+    points_list = np.array(points_list)
+    line, = ax.plot(points_list[:,1],points_list[:,0],color=color,linestyle=linestyle)
+    return line
 
-def loc_by_width(lon1,lat1,lon2,lat2,width,direction='right'):
-    """
-    width, width in degree
-    """
-    dlon = lon2 - lon1
-    dlat = lat2 - lat1
-    sphe_dist = spherical_dist(lon1,lat1,lon2,lat2)
-    #dist,_,_ = gps2dist_azimuth(lat1,lon1,lat2,lon2)
-
-    delta_lon = dlon*width/sphe_dist
-    delta_lat = dlat*width/sphe_dist
-
-    # rotate based right or left
-    if direction == "right":
-        tmp = delta_lon
-        delta_lon = delta_lat
-        delta_lat = -tmp
-    if direction == "left":
-        tmp = delta_lon
-        delta_lon = -delta_lat
-        delta_lat = tmp
-
-    new_lon1 = lon1 + delta_lon
-    new_lat1 = lat1 + delta_lat
-    new_lon2 = lon2 + delta_lon
-    new_lat2 = lat2 + delta_lat
-
-    return new_lon1,new_lat1,new_lon2,new_lat2
 
 def read_sac_ref_time(tr):
     """
@@ -103,17 +52,6 @@ def read_sac_ref_time(tr):
     year,month,day = month_day(nzyear,nzjday)
     sac_ref_time = UTCDateTime(year,month,day,nzhour,nzmin,nzsec)+nzmsec
     return sac_ref_time
-
-
-def spherical_dist(lon_1,lat_1,lon_2,lat_2):
-    """
-    Calculate the distance of two postions and return distance in degree
-    """
-
-    lon_1,lat_1,lon_2,lat_2 = map(radians,[lon_1,lat_1,lon_2,lat_2])
-    a=acos(sin(lat_1)*sin(lat_2)+cos(lat_1)*cos(lat_2)*cos(lon_2-lon_1))
-    return a*180/pi
-
 
 def get_st(net,sta,starttime,endtime,f_folder):
     """
@@ -193,102 +131,7 @@ def find_nearest(array,value):
     diff=array[idx]-value
     return idx,diff
 
-class WY_para():
-    '''
-    This class reads parameters in "wy.para", which contains parameters for GMT plot.
-    '''
-    def __init__(self,para_path="/home/zijinping/Desktop/zijinping/resources/wy.para"):
-        self.dict={}
-        with open(para_path) as f:
-            lines = f.readlines()
-            for line in lines:
-                line = line.rstrip()
-                if len(line)==0 or line[0]=='#' or line[:4]=="gmt ": # ignore comment line and gmt set line
-                    continue
-                if line[:9]=="root_path":
-                     self.dict["root_path"] = re.split("=",line.rstrip())[1]
-                     continue
-                content = re.split(" +",line.rstrip())[0]
-                para,info = re.split("=",content)
-                if len(re.split("\$",info))>1: # $ indicates citation of other parameters
-                    for seg in re.split("\$",info)[1:]: # seperate each citation
-                        sub = re.split("[/]",seg)[0]   # get the cited parameter name
-                        info=info.replace("$"+sub,self.dict[sub])
-                self.dict[para]=info
-        f.close()
-        #===============================================================================================
-        # load in information
-        # load_list=["city_loc",'city_label','ml_fault','zg_fault','Neo_fault','sta_loc','well']
-        tmp_arr = []
-        with open(self.dict['ml_fault'],'r') as f:
-            for line in f:
-                line = line.rstrip()
-                _lon,_lat = re.split(" +",line)
-                tmp_arr.append([float(_lon),float(_lat)])
-        f.close()
-        self.dict['ml_fault']=tmp_arr
-        #------------------------------------------------------------------------------------------------
-        tmp_dict={}
-        count = 0
-        with open(self.dict['zg_faults'],'r') as f:
-            for line in f:
-                line = line.rstrip()
-                if line[0] == "#":
-                    continue     # pass comment line
-                elif line[0]==">":
-                    count+=1
-                    tmp_dict[count]=[]
-                else:
-                    _lon,_lat = re.split(" +",line)
-                    tmp_dict[count].append([float(_lon),float(_lat)])
-        f.close()
-        self.dict['zg_faults'] = tmp_dict
-        #---------------------------------------------------------
-        tmp_dict={}
-        count = 0
-        with open(self.dict['Neo_faults'],'r') as f:
-            for line in f:
-                line = line.rstrip()
-                if line[0] == "#":
-                    continue     # pass comment line
-                elif line[0]==">":
-                    count+=1
-                    tmp_dict[count]=[]
-                else:
-                    _lon,_lat = re.split(" +",line)
-                    tmp_dict[count].append([float(_lon),float(_lat)])
-        f.close()
-        self.dict['Neo_faults'] = tmp_dict
-        #---------------------------------------------------------
-        tmp_arr = []
-        with open(self.dict['city_locs'],'r') as f:
-            for line in f:
-                line = line.rstrip()
-                _lon,_lat,_lvl,name = re.split(" +",line)[:4]
-                tmp_arr.append([float(_lon),float(_lat),int(_lvl),name])
-        f.close()
-        self.dict['city_locs']=tmp_arr
-        f.close()
-        #----------------------------------------------------------------
-        tmp_arr = []
-        with open(self.dict['sta_locs'],'r') as f:
-            for line in f:
-                line = line.rstrip()
-                net,sta,_lon,_lat,_ele,marker = re.split(" +",line)
-                tmp_arr.append([float(_lon),float(_lat),float(_ele),net,sta,marker])
-        f.close()
-        self.dict["sta_locs"]=tmp_arr
-        f.close()
-        #---------------------------------------------------------------
-        tmp_arr = []
-        with open(self.dict['wells'],'r') as f:
-            for line in f:
-                line = line.rstrip()
-                _lon,_lat,name,marker = re.split(" +",line)
-                tmp_arr.append([float(_lon),float(_lat),name,marker])
-        f.close()
-        self.dict["wells"]=tmp_arr
-        f.close()
+
 
 def read_sta_file(sta_file):
     """
@@ -379,10 +222,10 @@ def to_vel_sta_file(cont,out_file,ele_zero=True):
     f_vel.write("  \n")   # signal of end of file for VELEST
     f_vel.close()
 
-def sta2vel(sta_file,out_file):
+def sta2vel(sta_file,out_file,ele_zero=True):
     """
     Convert station file into VELEST format with 5 characters,
     which is applicable for the update VELEST program modified by Hardy ZI
     """
     cont = read_sta_file(sta_file)
-    to_vel_sta_file(cont,out_file)
+    to_vel_sta_file(cont,out_file,ele_zero)

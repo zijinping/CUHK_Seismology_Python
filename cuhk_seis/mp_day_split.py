@@ -25,9 +25,9 @@ def load_sta(sta_file):
             sta_dict[net][sta].append([float(_lon),float(_lat),float(_ele)])
     return sta_dict
 
-def pos_write(o_folder,sta_dict):
+def loc_write(o_folder,sta_dict):
     '''
-    position write of station information
+    write location information inside sac files
     '''
     sac_list=glob.glob(o_folder+"/"+"*.SAC")
     inp_status = False
@@ -143,7 +143,7 @@ def day_split(i_path,o_path,folder,sta_dict,format,shift_hour=0):
                     tr.write(o_folder+"/"+f_name,format=format)
                     
         if format=="SAC":
-            pos_write(o_folder,sta_dict)
+            loc_write(o_folder,sta_dict)
             
             
 def mp_day_split(i_path,o_path,sta_file,format="mseed",shift_hour=0):

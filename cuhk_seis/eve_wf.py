@@ -7,6 +7,7 @@ import shutil
 import re
 import matplotlib.pyplot as plt
 from cuhk_seis.utils import read_sac_ref_time,spherical_dist,get_st
+from cuhk_seis.reloc_related import load_y2000
 import numpy as np
 from tqdm import tqdm
 import pickle
@@ -22,77 +23,6 @@ def load_sta(sta_file):
     f.close()
     return sta_dict
 
-def load_y2000(y2000_file):
-    phs_cont = []
-    with open(y2000_file,"r") as f1:
-        for line in f1:
-            phs_cont.append(line.rstrip())
-    f1.close()
-    phs_dict = {}
-    event_count = 0
-
-    print(">>> Loading phases ... ")
-    for line in tqdm(phs_cont):
-        f_para = line[0:2]     # first two characters as first parameter(f_para)
-        if re.match("\d+",f_para):    # event line
-            event_count += 1
-            _yr=line[0:4];_mo=line[4:6];_day=line[6:8]
-            _hr=line[8:10];_minute=line[10:12];
-            yr = int(_yr); mo = int(_mo); day=int(_day); hr=int(_hr);minute=int(_minute);
-            _seconds=line[12:14]+"."+line[14:16]
-            evla=float(line[16:18])+(float(line[19:21])+float(line[21:23])*0.01)/60
-            evlo=float(line[23:26])+(float(line[27:29])+float(line[29:31])*0.01)/60
-            evdp=float(line[32:36])/100; evid = int(line[136:146])
-           # _,no,year,month,day,o_time,ab_sec,res,evla,evlo,evdp,mag,mag_res,np,ns,nt,sta_gap=re.split(" +",line)
-            #e_hr,e_min,e_seconds=re.split(":",o_time)
-            e_secs = float(_seconds)
-            e_time = UTCDateTime(yr,mo,day,hr,minute,0)+e_secs
-
-            str_time = e_time.strftime('%Y%m%d%H%M%S%f')
-            str_time = str_time[:16]
-            phs_dict[str_time] = {}
-            phs_dict[str_time]["eve_loc"] = [evlo,evla,evdp]
-            phs_dict[str_time]["phase"] = []
-            phs_dict[str_time]["evid"] = evid
-
-        elif re.match("[A-Z]+",f_para) and f_para != "  ": # phase line
-            net = line[5:7]
-            sta = re.split(" +",line[0:5])[0]
-            year = int(line[17:21])
-            month = int(line[21:23])
-            day = int(line[23:25])
-            hour = int(line[25:27])
-            minute = int(line[27:29])
-            if line[14]==" ":
-                #if sec or msec is 0, it will be "  " in out.arc file
-                _sec = line[41:44]; _sec_m = line[44:46]
-                if _sec == "   ":
-                    _sec = "000"
-                if _sec_m == "  ":
-                    _sec_m = "00"
-                p_type="S"
-                phs_time = UTCDateTime(year,month,day,hour,minute,0)+\
-                                   (int(float(_sec))+int(_sec_m)*0.01)
-                phs_dict[str_time]["phase"].append([net,sta,p_type,phs_time-e_time])
-            
-            else:
-                p_type="P"
-                #if sec or msec is 0, it will be "  " in out.arc file
-                _sec = line[29:32]; _sec_m = line[32:34]
-                if _sec == "   ":
-                    _sec = "000"
-                if _sec_m == "  ":
-                    _sec_m = "00"
-                phs_time = UTCDateTime(year,month,day,hour,minute,0)+\
-                                   (int(float(_sec))+int(_sec_m)*0.01)
-                phs_dict[str_time]["phase"].append([net,sta,p_type,phs_time-e_time])
-            
-    out_name = y2000_file+".pkl"
-    out_file = open(out_name,'wb')
-    pickle.dump(phs_dict,out_file)
-    out_file.close()
- 
-    return phs_dict
 
 def cut_eve_wf(phs_dict,sta_dict,src_root,tar_root,tb,te):
     eve_list = phs_dict.keys()

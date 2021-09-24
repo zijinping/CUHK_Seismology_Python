@@ -17,111 +17,13 @@ from cuhk_seis.utils import WY_para
 from tqdm import tqdm
 
 
-def velout_mod_2_dd_mod(in_file="velout.mod",out_file="velout.mod.dd"):
-    """
-    Load velocity structure from VELEST *.mod output file to HypoDD velocity input format
-    """
-    lines = []
-    with open(in_file,'r') as f:
-        for line in f:
-            line = line.strip()
-            lines.append(line)
-    f.close()
-
-    P_lays = []
-    P_vels = []
-    S_lays = []
-    S_vels = []
-
-    P_lay_qty = int(lines[1])
-    for line in lines[2:2+P_lay_qty]:
-        _vel,_dep,_damp = re.split(" +",line)
-        vel = float(_vel); dep = float(_dep)
-        P_vels.append(vel); P_lays.append(dep)
-
-    S_lay_qty = int(lines[2+P_lay_qty])
-    if P_lay_qty != S_lay_qty:
-        raise Exception("The qty of P and S layers are different")
-
-    for line in lines[3+P_lay_qty:3+P_lay_qty+S_lay_qty]:
-        _vel,_dep,_damp = re.split(" +",line)
-        vel = float(_vel); dep = float(_dep)
-        S_vels.append(vel); S_lays.append(dep)
-
-    if P_lays != S_lays:
-        print("Warning: Layers of P and S are different")
-        print(P_lays)
-        print(S_lays)
-
-    f = open(out_file,'w')
-
-    for lay in P_lays:
-        f.write(format(lay,"6.3f")+" ")
-    f.write("-9\n")
-
-    for vel in P_vels:
-        f.write(format(vel,"6.3f")+" ")
-    f.write("-9\n")
-
-    for i in range(len(P_vels)):
-        f.write(format(P_vels[i]/S_vels[i],'6.3f')+" ")
-    f.write("-9\n")
-
-def phs_add_mag(phs_file,mag_file):
-    """
-    Add magnitude information to the phs file. If no magnitude, set it to -9
-    """
-    out_file = phs_file+".mag"
-
-    # load in magnitude information
-    mag_dict = {}
-    with open(mag_file,'r') as f:
-        for line in f:
-            line = line.strip()
-            _evid,_mag = re.split(" +",line)
-            evid = int(_evid)
-            mag = float(_mag)
-            mag_dict[evid] = mag
-    
-    output_lines = []
-    evid_line_idxs = []
-    evid_list = []
-    i = 0
-    tmp_lines = []
-
-    with open(phs_file,'r') as f:
-        for line in f:
-            line = line.rstrip()
-            if line[:5] != "     ":
-                tmp_lines.append(line)
-            if line[:5] == "     ":
-                tmp_lines.append(line)
-                evid = int(re.split(" +",line)[1])
-                try:
-                    e_mag = mag_dict[evid]
-                    if e_mag < 0:
-                        e_mag = 0
-                except:
-                    e_mag = 0
-                eve_line = tmp_lines[0]
-                if len(eve_line) < 126:
-                    eve_line = eve_line[:36]+str(int(e_mag*100)).zfill(3)+eve_line[39:]
-                output_lines.append(eve_line)  # append the event line
-                for line in tmp_lines[1:]:
-                    output_lines.append(line)
-                tmp_lines = []                 # empty the temporary line
-    f.close()
-
-    with open(phs_file+".mag","w") as f:
-        for line in output_lines:
-            f.write(line+"\n")
-
 def phs2vel(phs_file,mag_threshold=-9,qty_limit=None):
     """
     convert *.phs file into velest format file
     """
     count = 0
     cont = []    # Save the content of the phase file
+    cont_sel = [] # content selected
     out_dict = {}     # output content
     with open(phs_file,'r') as f:
         for line in f:
@@ -129,7 +31,7 @@ def phs2vel(phs_file,mag_threshold=-9,qty_limit=None):
     f.close()
 
     for line in tqdm(cont):
-        if re.match("\d+",line[:6]):    # line start with digit is event line
+        if re.match("\d+",line[:6]):    # line start with digit is summary line
             e_label = line[:16]
             e_time = UTCDateTime.strptime(line[:12],'%Y%m%d%H%M')+int(line[12:16])*0.01
             e_lat = int(line[16:18])+int(line[19:23])*0.01/60
@@ -152,6 +54,8 @@ def phs2vel(phs_file,mag_threshold=-9,qty_limit=None):
 
             if record_status == False:
                 continue
+            
+            cont_sel.append(line)
             count += 1
             out_dict[e_label] = {}    # dict with event line str as key
             out_dict[e_label]["e_time"]=e_time
@@ -163,10 +67,12 @@ def phs2vel(phs_file,mag_threshold=-9,qty_limit=None):
         elif line[:6]=='      ':        # The last line indicate the evid
             if record_status==False:
                 continue
+            cont_sel.append(line)
             out_dict[e_label]["evid"]=int(line[63:72])
         else:                           # Station phase line
             if record_status==False:
                 continue
+            cont_sel.append(line)
             sta = line[:5].split()
             sta = sta[0]
             net = line[5:7]
@@ -191,6 +97,7 @@ def phs2vel(phs_file,mag_threshold=-9,qty_limit=None):
         e_dep = out_dict[key]["e_dep"]
         e_mag = out_dict[key]["e_mag"]
         phases = out_dict[key]["phase"]
+        evid = out_dict[key]["evid"]
         part1 = key[2:8]+" "+key[8:12]+" "+key[12:14]+"."+key[14:16]+" "
         part2 = format(e_lat,"7.4f")+"N"+" "+format(e_lon,"8.4f")+"E"+" "
         part3 = format(e_dep,"7.2f")+"  "+format(e_mag,"5.2f")
@@ -207,8 +114,13 @@ def phs2vel(phs_file,mag_threshold=-9,qty_limit=None):
             f.write((6-tmp)*13*" "+"\n") # add space to fill line
         elif tmp==0:
             f.write("\n")
-        f.write("    \n")
+        f.write(f"   {str(evid).zfill(6)}\n")
     f.write("9999")              # indicates end of file for VELEST
+    f.close()
+
+    f = open(phs_file+".sel",'w')
+    for line in cont_sel:
+        f.write(line+"\n")
     f.close()
 
 def dd2fdsn(in_file,subset=None):
@@ -567,8 +479,6 @@ def ncsn2pha(source_file,target_file):
             f.write(line)
             f.write('\n')
                 
-
-
 def sc2phs(file_list=[],region_condition="-9/-9/-9/-9",mag_condition=-9):
     #initiate
     lon_filt=True
@@ -788,9 +698,3 @@ def real2phs(input_file,phase_filt=8,region_filt=[0,0,0,0]):
                             format(p_sec*100,">5.0f")+"ES 1"+format(res*100,">4.0f")+"\n")
         f.write(format(event_id,">72d")+"\n")
         f.close()
-
-
-if __name__=="__main__":
-    """
-    This program converts the REAL Association Results/SC catalog to hypo-inverse format
-    """
