@@ -1,7 +1,7 @@
 import re
 import matplotlib.pyplot as plt
 import numpy as np
-from cuhk_seis.utils import draw_vel
+from cuhk_seis.utils import draw_vel,load_sta
 
 def load_cnv(cnv_file="velout.cnv"):
     """
@@ -172,6 +172,32 @@ class Vel_iter():
             print("-9\n")
         except:
             raise Exception("Please check whether this iteration has vp and vs attributes")
+
+    def gen_del_files(self,sta_file="/home/zijinping/Desktop/zijinping/resources/stations/sta_sum_202109.txt"):
+        sta_dict = load_sta(sta_file)
+        iter_name = self.iter_name
+        fp = open(iter_name+"_P.dly","w")
+        fS = open(iter_name+"_S.dly","w")
+        for sta in self.P_dly.keys():
+            # check whether there are stations in different network with the same name
+            count = 0
+            for tmp_net in sta_dict.keys():
+                for tmp_sta in sta_dict[tmp_net].keys():
+                    if tmp_sta == sta:
+                        count += 1
+                        net = tmp_net
+            if count > 1:
+                print(f"There are several stations with the same station name: {sta}")
+                print("The programme couldn't decide the correct network name.")
+                print("Please input the correct network name:")
+                net = input()
+            if count == 0:
+                print(f"Station not included in the station file and couldn't get network name")
+                net = "  "
+            fp.write(f"{format(sta,'5s')} {format(net,'2s')} {format(self.P_dly[sta],'5.2f')}\n")
+            fs.write(f"{format(sta,'5s')} {format(net,'2s')} {format(self.S_dly[sta],'5.2f')}\n")
+        fp.close()
+        fs.close()
                 
 class Velest():
     """
@@ -184,11 +210,6 @@ class Velest():
         self.load_i_mod()
         self.iters = []
         self.load_log()
-
-        iter_names = []
-        for iteration in self.iters:
-            iter_names.append(iteration.name)
-        print("Iteration list: ",iter_names)
     def load_i_mod(self):
         tmp = load_velest_mod(self.i_mod)
         self.i_P_deps = tmp[0]
@@ -269,6 +290,26 @@ class Velest():
         plt.grid()
         plt.show()
         return name_list,res_list
+
+    def rms_plot(self):
+        """
+        Plot residual of each iteration
+        """
+        name_list = []
+        rms_list = []
+        for iteration in self.iters:
+            name_list.append(iteration.name)
+            rms_list.append(iteration.rms)
+        fig,ax = plt.subplots(1,1,figsize=(6,6))
+        x_list = np.arange(0,len(self.iters),1)
+        ax.plot(x_list,rms_list)
+        ax.set_xlabel("Iteration")
+        ax.set_ylabel("Residual")
+        gap = int(len(x_list)/6)
+        plt.xticks(x_list[::gap],name_list[::gap])
+        plt.grid()
+        plt.show()
+        return name_list,rms_list
         
     def load_log(self):
         """
@@ -295,6 +336,7 @@ class Velest():
                 tmp = residual_line.split()
                 new_iter.datavar = float(tmp[1])
                 new_iter.residual = float(tmp[5])
+                new_iter.rms = float(tmp[8])
                 i=i+1
             #-------------------------------------------------------------------------------
             if len(re.split("Velocity model   1",line))>=2:
@@ -314,7 +356,7 @@ class Velest():
                 new_iter.S_vels = []
                 new_iter.S_deps = []
                 while cont[j]!="":
-                    _vel,_,_dep = cont[j].split()
+                    _vel,_,_dep = cont[j].split()[:3]
                     vel = float(_vel)
                     dep = float(_dep)
                     new_iter.S_vels.append(vel)
@@ -367,3 +409,4 @@ class Velest():
     
     def __len__(self):
         return len(self.iters)
+

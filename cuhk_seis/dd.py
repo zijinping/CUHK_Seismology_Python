@@ -1,3 +1,6 @@
+from obspy import UTCDateTime
+import re
+
 def event_sel(evid_list=[],event_dat="event.dat",event_sel="event.sel"):
     '''
     select events in the "event.dat" file and output them into

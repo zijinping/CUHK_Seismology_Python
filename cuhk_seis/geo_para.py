@@ -1,4 +1,5 @@
-importre
+import re
+
 class WY_para():
     '''
     This class reads parameters in "wy.para", which contains parameters for GMT plot.
