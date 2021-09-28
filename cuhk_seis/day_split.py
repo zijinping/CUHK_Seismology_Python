@@ -10,24 +10,12 @@ import warnings
 import numpy as np
 import multiprocessing as mp
 import time
+from cuhk_seis.utils import load_sta
 warnings.filterwarnings("ignore")
 
-def load_sta(sta_file):
-    sta_dict={}
-    with open(sta_file,'r') as f:
-        for line in f:
-            line = line.rstrip()
-            net,sta,_lon,_lat,_ele,label=re.split(" +",line)
-            if net not in sta_dict:
-                sta_dict[net]={}
-            if sta not in sta_dict[net]:
-                sta_dict[net][sta] = []
-            sta_dict[net][sta].append([float(_lon),float(_lat),float(_ele)])
-    return sta_dict
-
-def pos_write(o_folder,sta_dict):
+def loc_write(o_folder,sta_dict):
     '''
-    position write of station information
+    write longitude and latitude inside sac files
     '''
     sac_list=glob.glob(o_folder+"/"+"*.SAC")
     inp_status = False
@@ -98,7 +86,7 @@ def day_split(i_path,o_path,folder,sta_dict,format,shift_hour=0):
             f_month=t_point_list[0].month
             f_day=t_point_list[0].day
             #the second point should be the start time of the second day
-            trim_node=UTCDateTime(f_year,f_month,f_day)+24*60*60+shift_hour
+            trim_node=UTCDateTime(f_year,f_month,f_day+1)+shift_hour
             #if the second point is less than the total end time, add it into list and move to next day
             while trim_node < tte:
                 trim_point_list.append(trim_node)
@@ -143,10 +131,10 @@ def day_split(i_path,o_path,folder,sta_dict,format,shift_hour=0):
                     tr.write(o_folder+"/"+f_name,format=format)
                     
         if format=="SAC":
-            pos_write(o_folder,sta_dict)
+            loc_write(o_folder,sta_dict)
             
             
-def mp_day_split(i_path,o_path,sta_file,format="mseed",shift_hour=0,parallel=True):
+def mp_day_split(i_path,o_path,sta_file,format="mseed",shift_hour=0):
     '''
     This function reads in the data from QS5A devices and split them by days
     Parameters:
@@ -198,7 +186,7 @@ def mp_day_split(i_path,o_path,sta_file,format="mseed",shift_hour=0,parallel=Tru
         for record in false_folder:
             print(f"Error net or sta in folder: {record[0]} net:{record[1]} sta:{record[2]}")
         
-    if status == True and parallel==True:
+    if status == True:
         print("# Now multiprocessing...")
         cores = int(mp.cpu_count()/2)
         tasks = []
@@ -213,9 +201,6 @@ def mp_day_split(i_path,o_path,sta_file,format="mseed",shift_hour=0,parallel=Tru
             if(rs.ready()):
                 break
             time.sleep(0.5)
-    if status == True and parallel==False:
-        for folder in folder_list:
-            day_split(i_path,o_path,folder,sta_dict,format,shift_hour)
 
 if __name__=="__main__":
     """
