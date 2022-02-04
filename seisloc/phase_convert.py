@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#-----------------------------------------------------------------------------
 # coding: utf-8
 # author: Hardy ZI
 # history:
@@ -11,21 +11,21 @@ from obspy import UTCDateTime
 import os
 import sys
 import time
-from cuhk_seis.reloc_related import load_DD
+from seisloc.dd import loadDD
 import time
-from cuhk_seis.utils import WY_para
+from seisloc.geopara import WYpara
 from tqdm import tqdm
 
 
-def phs2vel(phs_file,mag_threshold=-9,qty_limit=None):
+def arc2cnv(arc_file,mag_threshold=-9,qty_limit=None):
     """
-    convert *.phs file into velest format file
+    convert y2000 archieve file into velest format file
     """
     count = 0
     cont = []    # Save the content of the phase file
     cont_sel = [] # content selected
     out_dict = {}     # output content
-    with open(phs_file,'r') as f:
+    with open(arc_file,'r') as f:
         for line in f:
             cont.append(line.rstrip())
     f.close()
@@ -89,7 +89,7 @@ def phs2vel(phs_file,mag_threshold=-9,qty_limit=None):
             pha_record = sta.ljust(5," ")+pha+"1"+format(diff_time,'6.2f')
             out_dict[e_label]["phase"].append(pha_record)
     print(f"# Total {count} events!")
-    cnv_file = phs_file+".cnv"
+    cnv_file = arc_file+".cnv"
     f = open(cnv_file,'w')
     for key in out_dict.keys():      # Loop for each event
         e_lat = out_dict[key]["e_lat"]
@@ -118,7 +118,7 @@ def phs2vel(phs_file,mag_threshold=-9,qty_limit=None):
     f.write("9999")              # indicates end of file for VELEST
     f.close()
 
-    f = open(phs_file+".sel",'w')
+    f = open(arc_file+".sel",'w')
     for line in cont_sel:
         f.write(line+"\n")
     f.close()
@@ -140,7 +140,7 @@ def dd2fdsn(in_file,subset=None):
     f=open(out_file,'w')
     f.write("#EventID|Time|Latitude|Longitude|Depth/km|Author|Catalog|Contributor|ContributorID|MagType|Magnitude|MagAuthor|EventLocationName\n")
     f.close()
-    eve_dict,df = load_hypoDD(reloc_file=in_file)
+    eve_dict,df = loadDD(reloc_file=in_file)
     T1 = time.time()
     print("%f seconds passed to load hypoDD file" %(T1-T0))
     eve_list = list(eve_dict)
@@ -273,7 +273,7 @@ def SC2fdsn(in_file,subset=None):
         f.write("SC|")
         f.write("01|")
         f.write(mag_type+'|')
-        f.write(format(e_mag,'5.2f')+"|")
+        f.write(format(e_mag+0.01,'5.2f')+"|")
         f.write("SC Agency|")
         f.write("SC\n")
     f.close()
@@ -479,30 +479,28 @@ def ncsn2pha(source_file,target_file):
             f.write(line)
             f.write('\n')
                 
-def sc2phs(file_list=[],region_condition="-9/-9/-9/-9",mag_condition=-9):
-    #initiate
-    lon_filt=True
-    lat_filt=True
-    mag_filt=True #filt magnitude
-    time_filt=True
-    lon_min,lon_max,lat_min,lat_max= re.split("/",region_condition)
-    if lon_min=="-9":
-        lon_filt=False
-    else:
-        lon_min = float(lon_min)
-        lon_max = float(lon_max)
-    if lat_min=="-9":
-        lat_filt=False
-    else:
-        lat_min = float(lat_min)
-        lat_max = float(lat_max)
-    if mag_condition==-9:
-        mag_filt = False
+def sc2phs(file_list=[],trims=[None,None,None,None],magThreshold=None,baseid=1,outfile='out.phs'):
+    """
+    convert Sichuan earthquake administration report into file could be
+    recognized by Hypoinverse.
+    """
     if file_list == []:
         for file in os.listdir("./"):
             if file[-4:]==".adj":
                 file_list.append(file)
     file_list.sort()
+ 
+    lon_filt=True
+    lat_filt=True
+    mag_filt=True #filt magnitude
+    time_filt=True
+    lon_min,lon_max,lat_min,lat_max= trims
+    if lon_min==None:
+        lon_filt=False
+    if lat_min==None:
+        lat_filt=False
+    if magThreshold==None:
+        mag_filt = False
     #initiate part
     output_content=[]
     input_content = []
@@ -511,8 +509,8 @@ def sc2phs(file_list=[],region_condition="-9/-9/-9/-9",mag_condition=-9):
             for line in f:
                 input_content.append(line.rstrip())
         f.close()
-    event_id=0
-    for line in input_content:
+    evid= baseid-1
+    for line in tqdm(input_content):
         if re.match("\d+",line[3:7]) and line[7]=="/":#then it is a event line
             record_status=True
             e_year = line[3:7]
@@ -528,173 +526,214 @@ def sc2phs(file_list=[],region_condition="-9/-9/-9/-9",mag_condition=-9):
                 continue
             else:
                 e_lat=float(e_lat)
-                if lat_filt:
+
+                if lat_filt:      
                     if e_lat<lat_min or e_lat>lat_max:
                         record_status=False
-                        continue
-            e_lon=line[34:41]
-            if e_lon=='       ':
-                record_status=False
-                continue
-            else:
+                        continue  
+            e_lon=line[34:41]     
+            if e_lon=='       ':  
+                record_status=False      
+                continue          
+            else:                 
                 e_lon=float(e_lon)
-                if lon_filt:
+                if lon_filt:      
                     if e_lon<lon_min or e_lon>lon_max:
                         record_status=False
-                        continue
-            e_dep=line[43:45]
-            if e_lat=='  ':
-                record_status=False
-                continue
-            else:
+                        continue  
+            e_dep=line[43:45]     
+            if e_lat=='  ':       
+                record_status=False      
+                continue          
+            else:                 
                 e_lat=float(e_lat)
-            e_mag=line[47:50]
-            if e_mag=='   ':
-                record_status=False
-                continue
-            else:
+            e_mag=line[47:50]     
+            if e_mag=='   ':      
+                record_status=False      
+                continue          
+            else:                 
                 e_mag=float(e_mag)
-                if mag_filt:
-                    if e_mag < mag_condition:
+                if mag_filt:      
+                    if e_mag < magThreshold:
                         record_status=False
-                        continue
-            if record_status==True:
-                if event_id!=0:
-                    output_content.append(format(str(event_id).rjust(72," ")))
-                event_id+=1
-                print("Process event     {0}    ".format(event_id),end='\r')
+                        continue  
+            if record_status==True:      
+                if evid!=baseid-1:   
+                    output_content.append(format(str(evid).rjust(72," ")))
+                evid+=1     
                 part1 = e_year+e_month+e_day+e_hour+e_minute+e_second_int+e_second_left+'0'
                 part2 = str(int(e_lat))+" "+str(int((e_lat-int(e_lat))*60*100)).zfill(4)
                 part3 = str(int(e_lon))+"E"+str(int((e_lon-int(e_lon))*60*100)).zfill(4)
                 part4 = str(int(e_dep)*100).rjust(5," ")+"000"+"L".rjust(84," ")+str(int(e_mag*100)).zfill(3)
                 output_content.append(part1+part2+part3+part4)
-        
-        elif record_status==True:
-            if line[0:2]!="  ":
-                net = line[0:2]
+                                  
+        elif record_status==True: 
+            if line[0:2]!="  ":   
+                net = line[0:2]   
                 sta = re.split(" +",line[3:8])[0]
-            p_type = line[17:19]
-            p_hour = line[32:34]
+            p_type = line[17:19]  
+            p_weight = float(line[25:28])
+            if p_weight >= 0.75:  
+                weightCode = 1    
+            elif p_weight >= 0.5: 
+                weightCode = 2    
+            elif p_weight >= 0.0: 
+                weightCode = 3    
+            p_hour = line[32:34]  
             p_minute = line[35:37]
             p_seconds = float(line[38:43])
             p_residual=line[45:50]
             if p_residual=="     ":
-                continue
-            else:
-                try:
+                continue                     
+            else:         
+                try:      
                     p_residual = float(p_residual)
-                except:
-                    continue
-            if p_type =="Pg":
-                part1 = sta.ljust(5," ")+net+"  SHZ IPU1"+e_year+e_month+e_day+p_hour+p_minute+" "+str(int(p_seconds*100)).zfill(4)
+                except:   
+                    continue  
+            if p_type =="Pg": 
+                part1 = sta.ljust(5," ")+net+"  SHZ IPU"+str(weightCode)+e_year+e_month+e_day+p_hour+p_minute+" "+str(int(p_seconds*100)).zfill(4)
                 part2 = str(int(p_residual*100)).rjust(4," ")+"  0    0   0   0"
                 output_content.append(part1+part2)
-            elif p_type == "Sg":
-                part1 = sta.ljust(5," ")+net+"  SHZ    4"+e_year+e_month+e_day+p_hour+p_minute+"    0   0  0 "
-                part2 = str(int(p_seconds*100)).zfill(4)+"ES 0"+str(int(p_residual*100)).rjust(4," ")
-                output_content.append(part1+part2)
-    output_content.append(format(str(event_id).rjust(72," ")))
-    with open("out.phs","w") as f:
+            elif p_type == "Sg": 
+                part1 = sta.ljust(5," ")+net+"  SHZ     "+e_year+e_month+e_day+p_hour+p_minute+"    0   0  0 "
+                part2 = str(int(p_seconds*100)).zfill(4)+"ES "+str(weightCode)+str(int(p_residual*100)).rjust(4," ")
+                output_content.append(part1+part2) 
+    output_content.append(format(str(evid).rjust(72," ")))
+    with open(outfile,"w") as f:
         for line in output_content:
             f.write(line+"\n")
-    print("  ") #for window output
 
-def real2phs(input_file,phase_filt=8,region_filt=[0,0,0,0]):
+def getWeightCode(weight,stds):
     """
-    change from REAL association result to the file that could be read by hypo-inverse
+    Get the corresponding weight code as HYPOINVERSE
     """
-    evlo_min,evlo_max,evla_min,evla_max = region_filt
-    if evlo_min == evlo_max:
-        region_filt_status=False
+    if weight < stds[3]:
+        weightCode = 4
+    elif weight < stds[2]:
+        weightCode = 3
+    elif weight < stds[1]:
+        weightCode = 2
+    elif weight < stds[0]:
+        weightCode = 1
     else:
-        region_filt_status=True
+        weightCode = 0
+        
+    return weightCode
 
-    input_title = re.split("\.",input_file)[:-1]
-    input_title = "".join(input_title)
-    output_file = input_title+".phs"
+def real2arc(inFile,
+             minObs=8,
+             cmp="SHZ",
+             boundCond=[],
+             weightCodeStds=[0.95,0.75,0.5,0.25],
+             startId = 0):
+    """
+    change from REAL association result to the file that could be read by HYPOINVERSE
+    outfile have the same name of input file with suffix '.phs'
+    
+    Parameters:
+        inFile: input file generated by REAL
+        minObs: minimum observation by stations, including P and S
+        boundCond: boundary condition, [lonMin,lonMax,latMin,latMax]
+        weightCodeStds: standards for weight code assignment,corresponding weight codes
+                        are [0,1,2,3,4]
+        startId: Initial event id. Default is zero, and events will receive IDs start from startID+1.
+                 Under cases user have demand to merge different catalogs, it is necessary to set up 
+                 different event ids to avoid event id confliction
+        
+    """
+    if len(boundCond) == 0:
+        boundFilt=False
+    elif len(boundCond) == 4:
+        boundFilt=True
+        lonMin,lonMax,latMin,latMax = boundCond
+    else:
+        raise Exception("boundCond should be with length 0 or 4!")
+        
+    inTitle = re.split("\.",inFile)[:-1]
+    inTitle = "".join(inTitle)
+    outFile = inTitle+".phs"
 
-    f_content=[]
-    with open(input_file,"r") as f:
+    cont=[]
+    with open(inFile,"r") as f:
         for line in f:
-            f_content.append(line)
+            cont.append(line.rstrip())
     f.close()
-    event_id = 0
-    filt_status = False #initiate the status
-    with open(output_file,"w") as f:
-        for line in f_content:
-            print(line)
-            f_para = re.split(" +",line)[1] # first parameter
-            # if it is digital number, then it is an event line
-            if re.match("\d+",f_para): 
-                filt_status = False   #first set to False and then if nt (number of total phase) > threshold
-                _,no,year,month,day,o_time,ab_sec,res,lat,lon,dep,mag,mag_res,np,ns,nt,sta_gap=re.split(" +",line)
-                if region_filt_status:
-                    if float(lon)<evlo_min or float(lon)>evlo_max or float(lat)<evla_min or float(lat)>evla_max:
-                        continue
-                if int(nt) >= phase_filt:
-                    filt_status = True
-                    # REAL provide seconds below zero and above 60, need to handle it
-                    e_hr,e_min,e_sec=re.split(":",o_time)
-                    e_sec = float(e_sec)
-                    e_time = UTCDateTime(year+"-"+month+"-"+day+"T"+e_hr+":"+e_min+":"+"00")+e_sec
-                    # re-get the value
-                    e_year = e_time.year
-                    e_month = e_time.month
-                    e_day = e_time.day
-                    e_hr = e_time.hour
-                    e_min = e_time.minute
-                    e_sec = e_time.second+e_time.microsecond/1000000
-                    # actions on lon and lat
-                    lat = float(lat)
-                    lat_i = int(lat) # int part, unit degree
-                    lat_f = lat - lat_i # float part, unit degree
-                    lon = float(lon)
-                    lon_i = int(lon) # int part, unit degree
-                    lon_f = lon - lon_i # float part, unit degree
-                    #actions on depth
-                    dep = float(dep) #unit km
-                    #actions on magnitude, if it is Null, then set to zero
-                    if mag == "-inf":
-                        mag = 0.0
-                        mag_res = 0.0
-                    else:
-                        mag = float(mag)
-                        mag_res = float(mag_res)
-                    if event_id > 0:
-                        f.write(format(event_id,">72d")+"\n")
-                    f.write(format(e_year,"4d")+format(e_month,"0>2d")+format(e_day,"0>2d")+\
-                        format(e_hr,"0>2d")+format(e_min,"0>2d")+format(e_sec*100,"0>4.0f")+\
-                        format(lat_i,"0>2d")+" "+format(lat_f*60*100,"0>4.0f")+\
-                        format(lon_i,"0>3d")+"E"+format(lon_f*60*100,"0>4.0f")+\
-                        format(dep*100,">5.0f")+format(mag*100,"0>3.0f")+"\n")
-                    event_id = event_id + 1
+    loopId = startId                          # initiate event ID
+    f = open(outFile,"w")
+    for line in cont:
+        f_para = re.split(" +",line)[1]       # first parameter            
+        if re.match("\d+",f_para):            # event line start with digital number
+            status = False                    # initiate the status to be False
+            _,_no,_yr,_mo,_dy,_otime,_absec,_timeRes = re.split(" +",line)[:8]
+            _lat,_lon,_dep,_mag,_magRes = re.split(" +",line)[8:13]
+            _numP,_numS,_numT,_staGap = re.split(" +",line)[13:]
+            lon = float(_lon); lat = float(_lat);dep = float(_dep)
+            numT = int(_numT)
+            if boundFilt:
+                if lon<lonMin or lon>lonMax or lat<latMin or lat>latMax:
+                    continue
+            if numT < minObs:
+                continue
+            status = True
+            # REAL provide seconds below zero and above 60, need to handle it
+            _ehr,_emin,_esec=re.split(":",_otime)
+            esec = float(_esec)
+            etime = UTCDateTime(_yr+"-"+_mo+"-"+_dy+"T"+_ehr+":"+_emin+":"+"00")+esec
+            # re-get the value
+            eyear = etime.year
+            emonth = etime.month
+            eday = etime.day
+            ehr = etime.hour
+            emin = etime.minute
+            esec = etime.second+etime.microsecond/1000000
+
+            latInt = int(lat)             # int part, unit degree
+            latDec = lat - latInt         # float part, unit degree
+            lonInt = int(lon)             # int part, unit degree
+            lonDec = lon - lonInt         # float part, unit degree
+
+            if _mag == "-inf":
+                mag = 0.0
+                mag_res = 0.0
             else:
-                if filt_status == True:
-                    _,net,sta,p_type,ab_sec,ref_sec,amp,res,weight,azimuth=re.split(" +",line)
-                    res=float(res)
-                    weight=float(weight)
-                    #special action
-                    weight=1.0
-                    p_time = e_time + float(ref_sec)
-                    p_year = p_time.year
-                    p_month = p_time.month
-                    p_day = p_time.day
-                    p_hr=p_time.hour
-                    p_min=p_time.minute
-                    p_sec=p_time.second+p_time.microsecond/1000000
-                    p_sec_i = p_time.second #int part
-                    p_sec_f = p_time.microsecond/1000000 #float part
-                    #write in content
-                    if p_type=="P":
-                        f.write(format(sta,"<5s")+format(net,"2s")+"  SHZ IPU1"+\
-                            format(p_year,"4d")+format(p_month,"0>2d")+format(p_day,"0>2d")+\
-                            format(p_hr,"0>2d")+format(p_min,"0>2d")+\
-                            format(p_sec*100,">5.0f")+\
-                            format(res*100,">4.0f")+"  0    0   0   0"+"\n")
-                    if p_type=="S":
-                        f.write(format(sta,"<5s")+format(net,"2s")+"  SHZ     "+\
-                            format(p_year,"4d")+format(p_month,"0>2d")+format(p_day,"0>2d")+\
-                            format(p_hr,"0>2d")+format(p_min,"0>2d")+"    0   0  0"+\
-                            format(p_sec*100,">5.0f")+"ES 1"+format(res*100,">4.0f")+"\n")
-        f.write(format(event_id,">72d")+"\n")
-        f.close()
+                mag = float(_mag)
+                mag_res = float(_magRes)
+            if loopId > startId:
+                f.write(format(loopId,">72d")+"\n")
+            f.write(format(eyear,"4d")+format(emonth,"0>2d")+format(eday,"0>2d")+\
+                format(ehr,"0>2d")+format(emin,"0>2d")+format(esec*100,"0>4.0f")+\
+                format(latInt,"0>2d")+" "+format(latDec*60*100,"0>4.0f")+\
+                format(lonInt,"0>3d")+"E"+format(lonDec*60*100,"0>4.0f")+\
+                format(dep*100,">5.0f")+format(mag*100,"0>3.0f")+"\n")                
+            loopId = loopId + 1
+        else:
+            if status == False:
+                continue
+            _,net,sta,phaType,_absSec,_relSec,_amp,_res,_weight,_az = re.split(" +",line)
+            res=float(_res);weight=float(_weight)
+            weightCode = getWeightCode(weight,weightCodeStds)
+            phaTime = etime + float(_relSec)
+            phaYr = phaTime.year
+            phaMo = phaTime.month
+            phaDy = phaTime.day
+            phaHr=phaTime.hour
+            phaMin=phaTime.minute
+            phaSec=phaTime.second+phaTime.microsecond/1000000
+            phaSecInt = phaTime.second #int part
+            phaSecDec = phaTime.microsecond/1000000 #float part
+            #write in content
+            if phaType=="P":
+                f.write(format(sta,"<5s")+format(net,"2s")+"  "+format(cmp,'3s')+\
+                    " IPU"+str(weightCode)+\
+                    format(phaYr,"4d")+format(phaMo,"0>2d")+format(phaDy,"0>2d")+\
+                    format(phaHr,"0>2d")+format(phaMin,"0>2d")+\
+                    format(phaSec*100,">5.0f")+\
+                    format(res*100,">4.0f")+"  0    0   0   0"+"\n")
+            if phaType=="S":
+                f.write(format(sta,"<5s")+format(net,"2s")+"  "+format(cmp,'3s')+"     "+\
+                    format(phaYr,"4d")+format(phaMo,"0>2d")+format(phaDy,"0>2d")+\
+                    format(phaHr,"0>2d")+format(phaMin,"0>2d")+"    0   0  0"+\
+                    format(phaSec*100,">5.0f")+"ES "+str(weightCode)+format(res*100,">4.0f")+"\n")
+    if loopId != startId:
+        f.write(format(loopId,">72d")+"\n")
+    f.close()
